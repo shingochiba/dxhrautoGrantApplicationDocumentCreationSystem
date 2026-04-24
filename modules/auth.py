@@ -77,10 +77,19 @@ def render_login_gate() -> bool:
     st.markdown("### ログイン")
     st.markdown("メールアドレスとパスワードを入力してください。")
 
-    # 通常ウィジェット方式（Streamlitのform issueを回避）
-    username = st.text_input("メールアドレス", key="_login_username", autocomplete="username")
-    password = st.text_input("パスワード", type="password", key="_login_password", autocomplete="current-password")
-    clicked = st.button("ログイン", type="primary", use_container_width=True)
+    # st.form で囲むことで、入力値とクリックイベントを atomically に送信する
+    # （Streamlit Cloud の遅延環境で「1回目失敗→2回目成功」になる問題を回避）
+    with st.form("login_form", clear_on_submit=False):
+        username = st.text_input(
+            "メールアドレス", key="_login_username", autocomplete="username"
+        )
+        password = st.text_input(
+            "パスワード", type="password", key="_login_password",
+            autocomplete="current-password"
+        )
+        clicked = st.form_submit_button(
+            "ログイン", type="primary", use_container_width=True
+        )
 
     if clicked:
         if check_password(username, password):
