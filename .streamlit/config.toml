@@ -1,0 +1,10 @@
+[server]
+# アップロードファイルの最大サイズ（MB）
+maxUploadSize = 50
+
+[theme]
+base = "dark"
+primaryColor = "#FF4B4B"
+
+[browser]
+gatherUsageStats = false
