@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 from dataclasses import asdict, fields
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 from .company_form import CompanyInfo, SocialInsuranceLabor, Office
 from . import auth
@@ -16,6 +16,9 @@ from . import auth
 # プロジェクトルート直下の data フォルダに保存
 _BASE_DIR = Path(__file__).resolve().parent.parent
 _STORAGE_DIR = _BASE_DIR / "data"
+# config フォルダ（マスタデータ等の Git 管理ファイル）
+_CONFIG_DIR = _BASE_DIR / "config"
+_SR_MASTER_FILE = _CONFIG_DIR / "sr_master.json"
 
 
 def _get_storage_file() -> Path:
@@ -95,3 +98,23 @@ def clear_saved() -> None:
     path = _get_storage_file()
     if path.exists():
         path.unlink()
+
+
+def load_sr_master() -> List[SocialInsuranceLabor]:
+    """社労士マスタを config/sr_master.json から読み込む。
+    ファイルが無い・壊れている場合は空リストを返す。
+    """
+    if not _SR_MASTER_FILE.exists():
+        return []
+    try:
+        with _SR_MASTER_FILE.open("r", encoding="utf-8") as f:
+            raw_list = json.load(f)
+        if not isinstance(raw_list, list):
+            return []
+        result: List[SocialInsuranceLabor] = []
+        for item in raw_list:
+            if isinstance(item, dict):
+                result.append(SocialInsuranceLabor(**_filter_fields(item, SocialInsuranceLabor)))
+        return result
+    except (json.JSONDecodeError, OSError, TypeError):
+        return []

@@ -292,6 +292,33 @@ def render_sr_form() -> Optional[SocialInsuranceLabor]:
     """社労士情報入力フォームを表示し、入力されたデータを返す"""
     st.subheader("社労士情報入力")
 
+    # === 社労士マスタからの自動入力 ===
+    # st.form の外に置く（form 内のウィジェット変更では rerun されないため）
+    from . import storage
+    master_list = storage.load_sr_master()
+    if master_list:
+        master_options = ["（手動入力）"] + [sr.office_name for sr in master_list]
+        selected_office = st.selectbox(
+            "📋 社労士マスタから選択（任意）",
+            options=master_options,
+            key="_sr_master_select",
+            help="マスタから選ぶと、社労士氏名・郵便番号・所在地・電話番号が自動入力されます。"
+                 "選択後にフィールドを手動編集することも可能です。"
+        )
+        # 選択が変わったときだけフィールドに反映する（手動編集を保護）
+        prev_selection = st.session_state.get('_sr_master_prev_selection')
+        if selected_office != prev_selection and selected_office != "（手動入力）":
+            sr_from_master = next(
+                (s for s in master_list if s.office_name == selected_office), None
+            )
+            if sr_from_master:
+                st.session_state['_sr_office_name'] = sr_from_master.office_name
+                st.session_state['_sr_name'] = sr_from_master.sr_name
+                st.session_state['_sr_postal_code'] = sr_from_master.postal_code
+                st.session_state['_sr_address'] = sr_from_master.address
+                st.session_state['_sr_phone_number'] = sr_from_master.phone_number
+        st.session_state['_sr_master_prev_selection'] = selected_office
+
     # st.form で囲むことで、送信ボタン押下時だけ rerun する
     with st.form("sr_info_form", clear_on_submit=False):
         col1, col2 = st.columns(2)
