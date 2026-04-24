@@ -102,19 +102,29 @@ def render_company_form() -> Optional[CompanyInfo]:
             label_visibility='collapsed'
         )
         if uploaded is not None:
-            from .company_importer import import_company_from_excel
-            imported, warnings = import_company_from_excel(uploaded.getvalue())
-            if imported:
-                _apply_imported_company(imported)
-                st.success("✅ 会社情報を読み込みました。下のフォームで確認・修正してから保存してください。")
-                for w in warnings:
-                    st.info(f"ℹ️ {w}")
-                # アップロードウィジェットをリセットし、フォームに値を反映
-                del st.session_state['company_info_sheet_upload']
-                st.rerun()
+            # 同じファイルを毎 rerun で再処理しないよう file_id でガード。
+            # （del session_state では file_uploader 表示は消えないため、フラグで管理する）
+            file_id = getattr(uploaded, 'file_id', None) or uploaded.name
+            last_imported = st.session_state.get('_last_imported_file_id')
+            if file_id != last_imported:
+                from .company_importer import import_company_from_excel
+                imported, warnings = import_company_from_excel(uploaded.getvalue())
+                if imported:
+                    _apply_imported_company(imported)
+                    st.session_state['_last_imported_file_id'] = file_id
+                    st.success("✅ 会社情報を読み込みました。下のフォームで確認・修正してから保存してください。")
+                    for w in warnings:
+                        st.info(f"ℹ️ {w}")
+                    st.rerun()
+                else:
+                    for w in warnings:
+                        st.error(w)
             else:
-                for w in warnings:
-                    st.error(w)
+                # 既にインポート済みのファイルが残っている状態（×で消すまで）
+                st.success("✅ 会社情報を読み込み済みです。下のフォームで確認・修正してください。")
+        else:
+            # ファイルが取り除かれたら処理済みフラグをリセット（同じファイル再アップロードに備える）
+            st.session_state.pop('_last_imported_file_id', None)
 
     # デフォルト値を session_state に初期化（widget 作成前、かつ初回のみ）
     # Streamlit の仕様: value= と key= を同時指定かつ session_state に値があると警告 + 誤動作
