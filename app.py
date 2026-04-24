@@ -32,6 +32,24 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Streamlit Cloud が注入する右上アイコン（Share / Star / Edit / GitHub）を非表示にする
+st.markdown(
+    """
+    <style>
+    /* ヘッダーごと非表示（Streamlit Cloud の viewer badge / GitHub リンク等を含む） */
+    header[data-testid="stHeader"] {display: none !important;}
+    /* 念のためツールバー系も非表示 */
+    [data-testid="stToolbar"] {display: none !important;}
+    [data-testid="stToolbarActions"] {display: none !important;}
+    [data-testid="stDecoration"] {display: none !important;}
+    /* Streamlit Cloud の viewer badge（古いバージョン向け） */
+    .viewerBadge_container__1QSob,
+    .viewerBadge_link__1S137 {display: none !important;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
 # ベースディレクトリ
 BASE_DIR = Path(__file__).parent
 
