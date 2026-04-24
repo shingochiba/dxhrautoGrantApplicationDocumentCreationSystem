@@ -125,85 +125,87 @@ def render_company_form() -> Optional[CompanyInfo]:
     if '_employee_count' not in st.session_state:
         st.session_state['_employee_count'] = 1
 
-    # ウィジェット: key= のみ使用し value= は指定しない
-    col1, col2 = st.columns(2)
+    # st.form で囲むことで、送信ボタン押下時だけ rerun する（入力中の rerun と
+    # 送信クリックの取りこぼしを防ぐ。Streamlit Cloud 環境で必須）
+    with st.form("company_info_form", clear_on_submit=False):
+        col1, col2 = st.columns(2)
 
-    with col1:
-        company_name = st.text_input(
-            "雇用保険適用事業所名 *",
-            key="_company_name",
-            help="会社名を正式名称で入力してください"
-        )
-        insurance_office_number = st.text_input(
-            "雇用保険適用事業所番号 *",
-            key="_insurance_office_number",
-            placeholder="0000-000000-0",
-            help="11桁（4桁-6桁-1桁）の形式で入力してください"
-        )
-        postal_code = st.text_input(
-            "郵便番号 *",
-            key="_postal_code",
-            placeholder="000-0000",
-        )
-        address = st.text_area(
-            "所在地 *",
-            key="_address",
-            height=80,
-        )
-        representative_name = st.text_input(
-            "代表者氏名 *",
-            key="_representative_name",
-        )
-        corporate_number = st.text_input(
-            "法人番号（13桁）",
-            key="_corporate_number",
-            max_chars=13,
-        )
+        with col1:
+            company_name = st.text_input(
+                "雇用保険適用事業所名 *",
+                key="_company_name",
+                help="会社名を正式名称で入力してください"
+            )
+            insurance_office_number = st.text_input(
+                "雇用保険適用事業所番号 *",
+                key="_insurance_office_number",
+                placeholder="0000-000000-0",
+                help="11桁（4桁-6桁-1桁）の形式で入力してください"
+            )
+            postal_code = st.text_input(
+                "郵便番号 *",
+                key="_postal_code",
+                placeholder="000-0000",
+            )
+            address = st.text_area(
+                "所在地 *",
+                key="_address",
+                height=80,
+            )
+            representative_name = st.text_input(
+                "代表者氏名 *",
+                key="_representative_name",
+            )
+            corporate_number = st.text_input(
+                "法人番号（13桁）",
+                key="_corporate_number",
+                max_chars=13,
+            )
 
-    with col2:
-        contact_name = st.text_input(
-            "担当者氏名 *",
-            key="_contact_name",
-        )
-        contact_department = st.text_input(
-            "担当者の所属・役職",
-            key="_contact_department",
-        )
-        contact_email = st.text_input(
-            "担当者メール",
-            key="_contact_email",
-            placeholder="example@company.co.jp",
-        )
-        phone_number = st.text_input(
-            "電話番号 *",
-            key="_phone_number",
-            placeholder="00-0000-0000",
-        )
-        main_business = st.text_input(
-            "主たる事業 *",
-            key="_main_business",
-            help="例：情報サービス業、製造業など",
-        )
-        representative_title = st.text_input(
-            "代表者役職",
-            key="_representative_title",
-        )
-        employee_count = st.number_input(
-            "常時雇用労働者数 *",
-            min_value=1,
-            key="_employee_count",
-        )
-        labor_bureau = st.selectbox(
-            "管轄労働局 *",
-            options=LABOR_BUREAUS,
-            key="_labor_bureau",
-        )
+        with col2:
+            contact_name = st.text_input(
+                "担当者氏名 *",
+                key="_contact_name",
+            )
+            contact_department = st.text_input(
+                "担当者の所属・役職",
+                key="_contact_department",
+            )
+            contact_email = st.text_input(
+                "担当者メール",
+                key="_contact_email",
+                placeholder="example@company.co.jp",
+            )
+            phone_number = st.text_input(
+                "電話番号 *",
+                key="_phone_number",
+                placeholder="00-0000-0000",
+            )
+            main_business = st.text_input(
+                "主たる事業 *",
+                key="_main_business",
+                help="例：情報サービス業、製造業など",
+            )
+            representative_title = st.text_input(
+                "代表者役職",
+                key="_representative_title",
+            )
+            employee_count = st.number_input(
+                "常時雇用労働者数 *",
+                min_value=1,
+                key="_employee_count",
+            )
+            labor_bureau = st.selectbox(
+                "管轄労働局 *",
+                options=LABOR_BUREAUS,
+                key="_labor_bureau",
+            )
 
-    # 送信ボタン
-    st.markdown("---")
-    submit_clicked = st.button(
-        "💾 保存して次へ", type="primary", use_container_width=True
-    )
+        # 送信ボタン（form_submit_button で確実に送信）
+        st.markdown("---")
+        submit_clicked = st.form_submit_button(
+            "💾 保存して次へ", type="primary", use_container_width=True
+        )
 
     if not submit_clicked:
         return None
@@ -280,40 +282,40 @@ def render_sr_form() -> Optional[SocialInsuranceLabor]:
     """社労士情報入力フォームを表示し、入力されたデータを返す"""
     st.subheader("社労士情報入力")
 
-    # ウィジェット: key= のみ使用し value= は指定しない
-    col1, col2 = st.columns(2)
+    # st.form で囲むことで、送信ボタン押下時だけ rerun する
+    with st.form("sr_info_form", clear_on_submit=False):
+        col1, col2 = st.columns(2)
 
-    with col1:
-        office_name = st.text_input(
-            "事務所名 *",
-            key="_sr_office_name",
-        )
-        sr_name = st.text_input(
-            "社労士氏名 *",
-            key="_sr_name",
-        )
-        sr_postal_code = st.text_input(
-            "郵便番号 *",
-            key="_sr_postal_code",
-            placeholder="000-0000"
-        )
+        with col1:
+            office_name = st.text_input(
+                "事務所名 *",
+                key="_sr_office_name",
+            )
+            sr_name = st.text_input(
+                "社労士氏名 *",
+                key="_sr_name",
+            )
+            sr_postal_code = st.text_input(
+                "郵便番号 *",
+                key="_sr_postal_code",
+                placeholder="000-0000"
+            )
 
-    with col2:
-        sr_address = st.text_area(
-            "所在地 *",
-            key="_sr_address",
-            height=80
-        )
-        sr_phone_number = st.text_input(
-            "電話番号 *",
-            key="_sr_phone_number",
-            placeholder="00-0000-0000"
-        )
+        with col2:
+            sr_address = st.text_area(
+                "所在地 *",
+                key="_sr_address",
+                height=80
+            )
+            sr_phone_number = st.text_input(
+                "電話番号 *",
+                key="_sr_phone_number",
+                placeholder="00-0000-0000"
+            )
 
-    submit_clicked = st.button(
-        "保存して次へ", type="primary", use_container_width=True,
-        key="_sr_submit_button"
-    )
+        submit_clicked = st.form_submit_button(
+            "保存して次へ", type="primary", use_container_width=True
+        )
 
     if not submit_clicked:
         return None
