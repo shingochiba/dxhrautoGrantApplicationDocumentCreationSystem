@@ -8,3 +8,7 @@ primaryColor = "#FF4B4B"
 
 [browser]
 gatherUsageStats = false
+
+[client]
+# 右上の Share / GitHub / ... メニューを非表示にする
+toolbarMode = "minimal"
