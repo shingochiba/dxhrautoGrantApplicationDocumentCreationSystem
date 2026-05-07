@@ -19,6 +19,7 @@ _STORAGE_DIR = _BASE_DIR / "data"
 # config フォルダ（マスタデータ等の Git 管理ファイル）
 _CONFIG_DIR = _BASE_DIR / "config"
 _SR_MASTER_FILE = _CONFIG_DIR / "sr_master.json"
+_INDUSTRY_CODES_FILE = _CONFIG_DIR / "industry_codes.json"
 
 
 def _get_storage_file() -> Path:
@@ -98,6 +99,24 @@ def clear_saved() -> None:
     path = _get_storage_file()
     if path.exists():
         path.unlink()
+
+
+def load_industry_codes() -> dict:
+    """日本標準産業分類（中分類2桁）コード→分類名の辞書を読み込む。
+    ファイルが無い・壊れている場合は空辞書を返す。
+    """
+    if not _INDUSTRY_CODES_FILE.exists():
+        return {}
+    try:
+        with _INDUSTRY_CODES_FILE.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return {}
+        # メタデータのキー（_comment 等）は除外し、2桁コードのみ返す
+        return {k: v for k, v in data.items()
+                if isinstance(k, str) and k.isdigit() and len(k) == 2}
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 def load_sr_master() -> List[SocialInsuranceLabor]:

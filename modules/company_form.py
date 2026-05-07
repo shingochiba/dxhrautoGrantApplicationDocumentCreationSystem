@@ -126,6 +126,34 @@ def render_company_form() -> Optional[CompanyInfo]:
             # ファイルが取り除かれたら処理済みフラグをリセット（同じファイル再アップロードに備える）
             st.session_state.pop('_last_imported_file_id', None)
 
+    # === 産業分類コードから「主たる事業」を入力 ===
+    # st.form の外に置く（form 内のウィジェット変更では rerun されないため）
+    with st.expander("📊 産業分類コードから「主たる事業」を入力（任意）", expanded=False):
+        st.caption(
+            "日本標準産業分類の中分類（2桁）コードを入力すると、対応する事業名を主たる事業欄に反映できます。"
+            "[出典: ハローワークインターネットサービス](https://www.hellowork.mhlw.go.jp/info/industry_list02.html)"
+        )
+        from . import storage as _storage
+        _industry_map = _storage.load_industry_codes()
+        _code = st.text_input(
+            "中分類コード（2桁）",
+            key="_industry_code",
+            max_chars=2,
+            placeholder="例: 39（情報サービス業）",
+        )
+        if _code:
+            if len(_code) == 2 and _code.isdigit():
+                _name = _industry_map.get(_code)
+                if _name:
+                    st.success(f"✅ **{_code}: {_name}**")
+                    if st.button("→ 主たる事業に反映", key="_apply_industry", type="primary"):
+                        st.session_state['_main_business'] = _name
+                        st.rerun()
+                else:
+                    st.warning(f"コード `{_code}` は産業分類に存在しません")
+            else:
+                st.info("2桁の数字を入力してください")
+
     # デフォルト値を session_state に初期化（widget 作成前、かつ初回のみ）
     # Streamlit の仕様: value= と key= を同時指定かつ session_state に値があると警告 + 誤動作
     if '_representative_title' not in st.session_state:
