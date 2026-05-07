@@ -1,0 +1,490 @@
+"""
+R80302（令和8年3月2日）書式用 Excel Writer
+
+ExcelWriter のサブクラスとして、R80302 書式特有の差分のみを実装する。
+- 大半の様式は現行と同じセル位置 → テンプレートパスのみ変更（オーバーライド）
+- 様式1-1号: 男女別受講者数の行が 80 → 74 へ移動
+- 様式1-3号: 全セルが +1 行ずれている
+- 様式14-1号: R80302 新規（定額制サービスによる訓練の事業所確認票）
+"""
+from datetime import datetime
+from typing import List
+
+from .company_form import CompanyInfo, SocialInsuranceLabor
+from .upload_handler import CurriculumGroup
+from .excel_writer import (
+    ExcelWriter, is_teigaku_course,
+    split_postal, split_phone, split_insurance_number,
+)
+
+
+class ExcelWriterR80302(ExcelWriter):
+    """R80302 書式用 Writer"""
+
+    # ==================================================================
+    # 計画申請書類
+    # ==================================================================
+
+    def write_訓練実施計画届(self, company: CompanyInfo, sr: SocialInsuranceLabor,
+                              group: CurriculumGroup, submit_date: datetime) -> str:
+        """01_職業訓練実施計画届(様式第1-1号) - R80302版
+
+        現行との差分: 男女別受講者数が S80/AN80 → S74/AN74 に移動
+        """
+        p1, p2 = split_postal(company.postal_code)
+        sp1, sp2 = split_postal(sr.postal_code) if sr else ("", "")
+        cp1, cp2, cp3 = split_phone(company.phone_number)
+        spp1, spp2, spp3 = split_phone(sr.phone_number) if sr else ("", "", "")
+        i1, i2, i3 = split_insurance_number(company.insurance_office_number)
+
+        male = sum(1 for p in group.participants if getattr(p, 'gender', '') in ('男', '男性'))
+        female = sum(1 for p in group.participants if getattr(p, 'gender', '') in ('女', '女性'))
+        if male + female == 0:
+            male = len(group.participants)
+
+        values = {
+            # 提出日
+            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': submit_date.day,
+            # 管轄労働局
+            'B7': company.labor_bureau,
+            # 事業主 郵便番号/住所/名称/代表者/法人番号
+            'AG9': p1, 'AL9': p2,
+            'AF10': company.address,
+            'AF12': company.company_name,
+            'AF13': company.representative_name,
+            'AF14': company.corporate_number,
+            # 社労士
+            'AG16': sp1, 'AL16': sp2,
+            'AF17': sr.address if sr else "",
+            'AF19': sr.office_name if sr else "",
+            'AF20': sr.sr_name if sr else "",
+            'AF21': spp1, 'AM21': spp2, 'AT21': spp3,
+            # 雇用保険適用事業所
+            'K26': company.company_name,
+            'AN26': i1, 'AS26': i2, 'AZ26': i3,
+            'M27': p1, 'Q27': p2,
+            'K28': company.address,
+            # 担当者
+            'R29': company.contact_name,
+            'AM29': company.contact_department,
+            'R30': cp1, 'W30': cp2, 'AB30': cp3,
+            'AM30': company.contact_email,
+            # 訓練コース
+            'K42': group.curriculum_name,
+            'AN42': len(group.participants),
+            # 男女別受講者数（R80302 では行 74 に移動）
+            'S74': male, 'AN74': female,
+        }
+        if group.start_date:
+            values['N43'] = group.start_date.year
+            values['T43'] = group.start_date.month
+            values['Z43'] = group.start_date.day
+        if group.end_date:
+            values['AI43'] = group.end_date.year
+            values['AO43'] = group.end_date.month
+            values['AU43'] = group.end_date.day
+
+        fname = f"01_職業訓練実施計画届_{company.company_name}_{group.curriculum_name}.xlsx"
+        return self._patch(
+            "計画申請/01_職業訓練実施計画届(様式第1-1号)_企業名.xlsx",
+            fname, values
+        )
+
+    def write_事業展開等実施計画(self, company: CompanyInfo, group: CurriculumGroup,
+                                  submit_date: datetime) -> str:
+        """02_事業展開等実施計画(様式第1-3号) - R80302版
+
+        現行との差分: 全セルが +1 行ずれている
+        """
+        values = {
+            # 申請事業主の証明欄の日付（行73 → 行74）
+            'H74': submit_date.year,
+            'L74': submit_date.month,
+            'O74': submit_date.day,
+            # 代表者役職名・氏名（行76,77 → 行77,78）
+            'K77': company.representative_title,
+            'K78': company.representative_name,
+        }
+        fname = f"02_事業展開等実施計画_{company.company_name}_{group.curriculum_name}.xlsx"
+        return self._patch(
+            "計画申請/02_事業展開等実施計画(様式第1-3号)_企業名.xlsx",
+            fname, values
+        )
+
+    def write_対象者一覧_3_1(self, company: CompanyInfo, group: CurriculumGroup) -> str:
+        """03_対象労働者一覧(様式第3-1号) - R80302版（セル位置は現行と同じ）"""
+        values = {
+            'C8': company.company_name,
+            'C9': group.curriculum_name,
+        }
+        start_row = 13
+        rows_per_entry = 2
+        for idx, p in enumerate(group.participants):
+            r = start_row + idx * rows_per_entry
+            values[f'B{r}'] = p.name
+            parts = (p.insurance_number or "").replace('−', '-').replace('ー', '-').split('-')
+            if len(parts) == 3:
+                values[f'C{r}'] = parts[0]
+                values[f'F{r}'] = parts[1]
+                values[f'I{r}'] = parts[2]
+
+        fname = f"03_対象労働者一覧(3-1)_{company.company_name}_{group.curriculum_name}.xlsx"
+        return self._patch(
+            "計画申請/03_人材開発支援助成金（事業展開等リスキリング支援コース）対象労働者一覧(様式第3-1号).xlsx",
+            fname, values
+        )
+
+    def write_対象者一覧_3_2(self, company: CompanyInfo, group: CurriculumGroup) -> str:
+        """03_対象労働者一覧(様式第3-2号)定額制 - R80302版（セル位置は現行と同じ）"""
+        values = {
+            'C11': company.company_name,
+            'C12': group.curriculum_name,
+        }
+        start_row = 16
+        for idx, p in enumerate(group.participants):
+            r = start_row + idx
+            values[f'B{r}'] = idx + 1
+            values[f'C{r}'] = p.name
+            values[f'G{r}'] = p.insurance_number
+
+        fname = f"03_対象労働者一覧(3-2)_{company.company_name}_{group.curriculum_name}.xlsx"
+        return self._patch(
+            "計画申請/03_人材開発支援助成金（事業展開等リスキリング支援コース）対象労働者一覧(様式第3-2号)※定額制.xlsx",
+            fname, values
+        )
+
+    def write_事前確認書(self, company: CompanyInfo, sr: SocialInsuranceLabor,
+                         group: CurriculumGroup, submit_date: datetime,
+                         teigaku: bool = False) -> str:
+        """04_事前確認書(様式第11号) - R80302版（セル位置は現行と同じ）"""
+        if teigaku:
+            template = "計画申請/04_事前確認書(様式第11号)_企業名 ※定額制.xlsx"
+            suffix = "_定額制"
+        else:
+            template = "計画申請/04_事前確認書(様式第11号)_企業名.xlsx"
+            suffix = ""
+
+        p1, p2 = split_postal(company.postal_code)
+        sp1, sp2 = split_postal(sr.postal_code) if sr else ("", "")
+        cp1, cp2, cp3 = split_phone(company.phone_number)
+        spp1, spp2, spp3 = split_phone(sr.phone_number) if sr else ("", "", "")
+
+        values = {
+            'E12': submit_date.year, 'I12': submit_date.month, 'L12': submit_date.day,
+            'S13': p1, 'W13': p2,
+            'R14': company.address,
+            'R16': company.company_name,
+            'R18': company.representative_name,
+            'R19': cp1, 'V19': cp2, 'Z19': cp3,
+            'S21': sp1, 'W21': sp2,
+            'R22': sr.address if sr else "",
+            'R24': sr.office_name if sr else "",
+            'R26': sr.sr_name if sr else "",
+            'R27': spp1, 'V27': spp2, 'Z27': spp3,
+            'A30': company.labor_bureau,
+        }
+        fname = f"04_事前確認書{suffix}_{company.company_name}_{group.curriculum_name}.xlsx"
+        return self._patch(template, fname, values)
+
+    def write_様式14_1(self, company: CompanyInfo, group: CurriculumGroup,
+                       submit_date: datetime) -> str:
+        """06_様式第14-1号 定額制サービスによる訓練に関する事業所確認票（R80302 新規）
+
+        会社情報の事業所一覧（offices）を反映する：
+          - 申請事業所(本社) = offices[0] または会社情報から構築 → 行16
+          - 従たる事業所 = offices[1:] → 行21,23,25,...,39（最大10件）
+        """
+        offices = company.offices or []
+
+        # 申請事業所（本社）
+        if offices:
+            head = offices[0]
+            head_name = head.name or company.company_name
+            head_ins = head.insurance_number or company.insurance_office_number
+            head_emp = head.employee_count or 0
+        else:
+            head_name = company.company_name
+            head_ins = company.insurance_office_number
+            head_emp = 0
+
+        i1, i2, i3 = split_insurance_number(head_ins)
+
+        values = {
+            # 提出日
+            'O3': submit_date.year, 'T3': submit_date.month, 'V3': submit_date.day,
+            # 事業主・所在地・コース名
+            'J8': company.company_name,
+            'J10': company.address,
+            'A12': group.curriculum_name,
+            # 申請事業所（本社）行16
+            'A16': head_name,
+            'G16': i1, 'L16': i2, 'S16': i3,
+            'T16': head_emp if head_emp else "",
+        }
+
+        # 従たる事業所（最大10件、行21から2行ずつ）
+        subsidiary = offices[1:] if len(offices) > 1 else []
+        office_rows = [21, 23, 25, 27, 29, 31, 33, 35, 37, 39]
+        for idx, office in enumerate(subsidiary[:10]):
+            r = office_rows[idx]
+            s1, s2, s3 = split_insurance_number(office.insurance_number)
+            values[f'B{r}'] = office.name
+            values[f'G{r}'] = s1
+            values[f'L{r}'] = s2
+            values[f'S{r}'] = s3
+            if office.employee_count:
+                values[f'T{r}'] = office.employee_count
+
+        # 事業所数
+        total_offices = max(1, len(offices)) if offices else 1
+        values['R12'] = total_offices
+
+        fname = f"06_様式14-1号_{company.company_name}_{group.curriculum_name}.xlsx"
+        return self._patch(
+            "計画申請/06_人材開発支援助成金（事業展開等リスキリング支援コース）定額制サービスによる訓練に関する事業所確認票(様式第14-1号).xlsx",
+            fname, values
+        )
+
+    # ==================================================================
+    # 支給申請書類
+    # ==================================================================
+
+    def write_支給申請書(self, company: CompanyInfo, sr: SocialInsuranceLabor,
+                         group: CurriculumGroup, submit_date: datetime) -> str:
+        """01_支給申請書(様式第4-2号) - R80302版（セル位置は現行と同じ）"""
+        p1, p2 = split_postal(company.postal_code)
+        sp1, sp2 = split_postal(sr.postal_code) if sr else ("", "")
+        cp1, cp2, cp3 = split_phone(company.phone_number)
+        spp1, spp2, spp3 = split_phone(sr.phone_number) if sr else ("", "", "")
+        i1, i2, i3 = split_insurance_number(company.insurance_office_number)
+
+        male = sum(1 for p in group.participants if getattr(p, 'gender', '') in ('男', '男性'))
+        female = sum(1 for p in group.participants if getattr(p, 'gender', '') in ('女', '女性'))
+        if male + female == 0:
+            male = len(group.participants)
+
+        values = {
+            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': submit_date.day,
+            'B7': company.labor_bureau,
+            'AG9': p1, 'AL9': p2,
+            'AF10': company.address,
+            'AF12': company.company_name,
+            'AF13': company.representative_name,
+            'AG16': sp1, 'AL16': sp2,
+            'AF17': sr.address if sr else "",
+            'AF19': sr.office_name if sr else "",
+            'AF20': sr.sr_name if sr else "",
+            'AF21': spp1, 'AM21': spp2, 'AT21': spp3,
+            'K26': company.main_business,
+            'K27': company.employee_count,
+            'K30': company.company_name,
+            'AN30': i1, 'AS30': i2, 'AZ30': i3,
+            'R31': company.contact_name,
+            'AM31': company.contact_department,
+            'R32': cp1, 'W32': cp2, 'AB32': cp3,
+            'AM32': company.contact_email,
+            'M37': male,
+            'AM37': female,
+        }
+        if company.corporate_number:
+            digits = str(company.corporate_number).replace('-', '').strip()
+            cols = ['AF','AG','AH','AI','AJ','AK','AL','AM','AN','AO','AP','AQ','AR']
+            for i, d in enumerate(digits[:13]):
+                values[f'{cols[i]}14'] = d
+
+        fname = f"01_支給申請書_{group.curriculum_name}_{company.company_name}.xlsx"
+        return self._patch(
+            "支給申請/01_支給申請書(様式第4-2号)_研修名_企業名.xlsx",
+            fname, values
+        )
+
+    def write_経費助成内訳(self, company: CompanyInfo, group: CurriculumGroup) -> str:
+        """02_経費助成の内訳(様式第6-2号) - R80302版（セル位置は現行と同じ）"""
+        values = {
+            'J7': company.labor_bureau,
+            'AE7': company.company_name,
+        }
+        fname = f"02_経費助成の内訳_{group.curriculum_name}_{company.company_name}.xlsx"
+        return self._patch(
+            "支給申請/02_経費助成の内訳(様式第6-2号)_研修名_企業名(eラーニング).xlsx",
+            fname, values
+        )
+
+    def write_賃金助成内訳(self, company: CompanyInfo, group: CurriculumGroup) -> str:
+        """03_賃金助成の内訳(様式第5号) - R80302版（セル位置は現行と同じ）"""
+        values = {
+            'P7': company.labor_bureau,
+            'BA7': company.company_name,
+        }
+        fname = f"03_賃金助成の内訳_{group.curriculum_name}_{company.company_name}.xlsx"
+        return self._patch(
+            "支給申請/03_賃金助成の内訳(様式第5号)_研修名_企業名(インタラクティブのみ).xlsx",
+            fname, values
+        )
+
+    def write_対象者一覧_支給_3_1(self, company: CompanyInfo, group: CurriculumGroup) -> str:
+        """支給申請の 03_対象者一覧(様式第3-1号) - R80302版（セル位置は計画版と同じ）"""
+        values = {
+            'C8': company.company_name,
+            'C9': group.curriculum_name,
+        }
+        start_row = 13
+        rows_per_entry = 2
+        for idx, p in enumerate(group.participants):
+            r = start_row + idx * rows_per_entry
+            values[f'B{r}'] = p.name
+            parts = (p.insurance_number or "").replace('−', '-').replace('ー', '-').split('-')
+            if len(parts) == 3:
+                values[f'C{r}'] = parts[0]
+                values[f'F{r}'] = parts[1]
+                values[f'I{r}'] = parts[2]
+        fname = f"03_対象者一覧(支給)_{group.curriculum_name}_{company.company_name}.xlsx"
+        return self._patch(
+            "支給申請/03_対象者一覧(様式第3-1号)_企業名.xlsx",
+            fname, values
+        )
+
+    def write_事業所確認票(self, company: CompanyInfo, group: CurriculumGroup,
+                          submit_date: datetime) -> str:
+        """05_事業所確認票(様式第13号) - R80302版（セル位置は現行と同じ）"""
+        values = {
+            'N3': submit_date.year, 'R3': submit_date.month, 'T3': submit_date.day,
+            'B4': company.labor_bureau,
+            'L8': company.company_name,
+            'L10': company.address,
+        }
+        offices = company.offices or []
+        if offices:
+            head = offices[0]
+            head_name = head.name or company.company_name
+            head_ins = head.insurance_number or company.insurance_office_number
+            head_emp = head.employee_count
+        else:
+            head_name = company.company_name
+            head_ins = company.insurance_office_number
+            head_emp = company.employee_count
+
+        i1, i2, i3 = split_insurance_number(head_ins)
+        values['A16'] = head_name
+        values['D16'] = i1
+        values['I16'] = i2
+        values['P16'] = i3
+        if head_emp:
+            values['Q16'] = head_emp
+
+        subsidiary = offices[1:] if len(offices) > 1 else []
+        office_rows = [21, 23, 25, 27, 29, 31, 33, 35, 37, 39]
+        for idx, office in enumerate(subsidiary[:10]):
+            r = office_rows[idx]
+            s1, s2, s3 = split_insurance_number(office.insurance_number)
+            values[f'B{r}'] = office.name
+            values[f'D{r}'] = s1
+            values[f'I{r}'] = s2
+            values[f'P{r}'] = s3
+            if office.employee_count:
+                values[f'Q{r}'] = office.employee_count
+
+        total_offices = max(1, len(offices)) if offices else 1
+        values['L12'] = total_offices
+
+        fname = f"05_事業所確認票_{group.curriculum_name}_{company.company_name}.xlsx"
+        return self._patch(
+            "支給申請/05_事業所確認票(様式第13号)_研修名_企業名.xlsx",
+            fname, values
+        )
+
+    def write_支給申請承諾書(self, company: CompanyInfo, group: CurriculumGroup,
+                              submit_date: datetime) -> str:
+        """04_支給申請承諾書(様式第12号) - R80302版（セル位置は現行と同じ）
+
+        注意: 教育訓練機関のセル（F26: 所在地, F28: 名称, P30: 代表者氏名, F32: 法人番号）は
+              テンプレートに埋め込む形で運用する想定（現行も同じパターン）。
+              フォームから書き込む対象は 申請事業主・確認日・対象訓練のみ。
+        """
+        values = {
+            # 確認日
+            'R24': submit_date.year, 'V24': submit_date.month, 'Y24': submit_date.day,
+            # 対象訓練（1件目）
+            'F40': group.curriculum_name,
+            # 申請事業主
+            'E51': company.address,
+            'E53': company.company_name,
+            'E55': company.representative_name,
+        }
+        if group.start_date:
+            values['S40'] = group.start_date.year
+            values['W40'] = group.start_date.month
+            values['Y40'] = group.start_date.day
+        if group.end_date:
+            values['S42'] = group.end_date.year
+            values['W42'] = group.end_date.month
+            values['Y42'] = group.end_date.day
+
+        fname = f"04_支給申請承諾書_{group.curriculum_name}_{company.company_name}.xlsx"
+        return self._patch(
+            "支給申請/04_人材開発支援助成金（事業展開等リスキリング支援コース）支給申請承諾書（訓練実施者）(様式第12号).xlsx",
+            fname, values
+        )
+
+    # ==================================================================
+    # 書類一式生成
+    # ==================================================================
+
+    def generate_plan_documents(self, company: CompanyInfo, sr: SocialInsuranceLabor,
+                                 group: CurriculumGroup, submit_date: datetime) -> List[str]:
+        """計画申請書類の一括生成（R80302）
+
+        現行との差分:
+          - Word書類（事業内職業能力開発計画）は無し
+          - 定額制の場合は様式14-1号（事業所確認票）を追加
+        """
+        generated = []
+        teigaku = is_teigaku_course(group.subsidy_course)
+
+        jobs = [
+            ("計画届", lambda: self.write_訓練実施計画届(company, sr, group, submit_date)),
+            ("事業展開等実施計画", lambda: self.write_事業展開等実施計画(company, group, submit_date)),
+        ]
+        if teigaku:
+            jobs.append(("対象者一覧(3-2定額制)", lambda: self.write_対象者一覧_3_2(company, group)))
+        else:
+            jobs.append(("対象者一覧(3-1)", lambda: self.write_対象者一覧_3_1(company, group)))
+        jobs.append(("事前確認書",
+                     lambda: self.write_事前確認書(company, sr, group, submit_date, teigaku=teigaku)))
+        if teigaku:
+            jobs.append(("様式14-1号", lambda: self.write_様式14_1(company, group, submit_date)))
+
+        for label, fn in jobs:
+            try:
+                generated.append(fn())
+            except Exception as e:
+                print(f"[{label}] 生成失敗: {e}")
+                import traceback
+                traceback.print_exc()
+        return generated
+
+    def generate_payment_documents(self, company: CompanyInfo, sr: SocialInsuranceLabor,
+                                    group: CurriculumGroup, submit_date: datetime) -> List[str]:
+        """支給申請書類の一括生成（R80302）
+
+        現行との差分:
+          - 対象者一覧(様式3-1号) を追加（支給申請にも含まれる）
+          - 支給申請承諾書(様式12号) のテンプレート名・内部構成が異なる
+        """
+        generated = []
+        jobs = [
+            ("支給申請書", lambda: self.write_支給申請書(company, sr, group, submit_date)),
+            ("経費助成内訳", lambda: self.write_経費助成内訳(company, group)),
+            ("対象者一覧(支給)", lambda: self.write_対象者一覧_支給_3_1(company, group)),
+            ("賃金助成内訳", lambda: self.write_賃金助成内訳(company, group)),
+            ("支給申請承諾書", lambda: self.write_支給申請承諾書(company, group, submit_date)),
+            ("事業所確認票", lambda: self.write_事業所確認票(company, group, submit_date)),
+        ]
+        for label, fn in jobs:
+            try:
+                generated.append(fn())
+            except Exception as e:
+                print(f"[{label}] 生成失敗: {e}")
+                import traceback
+                traceback.print_exc()
+        return generated

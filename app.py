@@ -20,7 +20,7 @@ from modules.company_form import (
 from modules.upload_handler import (
     render_upload_form, get_saved_participant_groups
 )
-from modules.document_generator import DocumentGenerator
+from modules.document_generator import DocumentGenerator, FORMAT_CONFIGS, get_format_label
 from modules.storage import load_saved_company, load_saved_sr, clear_saved
 from modules.auth import render_login_gate, get_current_user, logout
 
@@ -279,6 +279,23 @@ def render_step4():
         st.error("受講者一覧がアップロードされていません。")
         return
 
+    st.subheader("書式の選択")
+    format_options = list(FORMAT_CONFIGS.keys())
+    format_id = st.selectbox(
+        "書式を選択",
+        options=format_options,
+        format_func=get_format_label,
+        index=0,
+        key="format_id_select",
+        help="生成する書類の書式を選択してください"
+    )
+    # 自動入力非対応の書式の場合は注意書き
+    if not FORMAT_CONFIGS[format_id]["auto_fill"]:
+        st.warning(
+            f"⚠️ **{get_format_label(format_id)}** は現在自動入力に対応していません。"
+            "テンプレートファイル一式をZIPで出力します（中身は手動で入力してください）。"
+        )
+
     st.subheader("書類種類の選択")
     col1, col2 = st.columns(2)
     with col1:
@@ -304,6 +321,7 @@ def render_step4():
     st.session_state['generate_payment'] = generate_payment
     st.session_state['selected_curricula'] = selected_curricula
     st.session_state['submit_date'] = datetime.combine(submit_date, datetime.min.time())
+    st.session_state['format_id'] = format_id
 
     if selected_curricula and (generate_plan or generate_payment):
         if st.button("📄 書類を生成する", type="primary", use_container_width=True):
@@ -335,6 +353,14 @@ def render_step5():
     generate_payment = st.session_state.get('generate_payment', True)
     selected_curricula = st.session_state.get('selected_curricula', list(groups.keys()))
     submit_date = st.session_state.get('submit_date', datetime.now())
+    format_id = st.session_state.get('format_id', 'current')
+
+    # 選択された書式を表示
+    st.info(f"📋 書式: **{get_format_label(format_id)}**")
+    if not FORMAT_CONFIGS[format_id]["auto_fill"]:
+        st.warning(
+            "この書式は自動入力に対応していないため、テンプレート一式をそのまま出力します。"
+        )
 
     # 生成実行
     if 'generated_files' not in st.session_state:
@@ -360,7 +386,8 @@ def render_step5():
                         generate_plan=generate_plan,
                         generate_payment=generate_payment,
                         selected_curricula=[curriculum_key],
-                        submit_date=submit_date
+                        submit_date=submit_date,
+                        format_id=format_id,
                     )
                     generated_files.update(result)
 

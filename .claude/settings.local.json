@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//tmp/**)",
+      "Read(//c/tmp/**)",
+      "Bash(iconv -f cp932 -t utf-8)"
+    ]
+  }
+}
