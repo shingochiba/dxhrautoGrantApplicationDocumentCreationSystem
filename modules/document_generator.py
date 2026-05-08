@@ -11,6 +11,7 @@ from .company_form import CompanyInfo, SocialInsuranceLabor
 from .upload_handler import CurriculumGroup
 from .excel_writer import ExcelWriter
 from .excel_writer_r80302 import ExcelWriterR80302
+from .excel_writer_r070401 import ExcelWriterR070401
 from .word_writer import WordWriter
 
 
@@ -30,7 +31,7 @@ FORMAT_CONFIGS: Dict[str, Dict] = {
     "r70401": {
         "label": "令和7年4月1日書式",
         "subdir": "R070401書式",
-        "auto_fill": False,  # Phase 2 で対応予定
+        "auto_fill": True,  # Phase 2 実装済み
     },
 }
 
@@ -193,6 +194,8 @@ class DocumentGenerator:
         """書式IDに応じた ExcelWriter インスタンスを生成"""
         if format_id == "r80302":
             return ExcelWriterR80302(template_dir, output_dir)
+        if format_id == "r70401":
+            return ExcelWriterR070401(template_dir, output_dir)
         return ExcelWriter(template_dir, output_dir)
 
     def _copy_templates_as_stub(self, source_subdir: Path, output_dir: Path,
