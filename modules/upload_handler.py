@@ -13,12 +13,20 @@ class Participant:
     no: int
     name: str                        # 氏名
     insurance_number: str            # 雇用保険被保険者番号
-    employment_type: str             # 雇用形態
+    employment_type: str             # 雇用区分（旧：雇用形態）
     curriculum_name: str             # カリキュラム名
     start_date: datetime             # 訓練開始日
     end_date: datetime               # 訓練終了日
     tuition_fee: float               # 受講料
     subsidy_course: str              # 助成コース
+    # 拡張フィールド（新テンプレート対応、既存ファイルでは空のまま）
+    furigana: str = ""               # フリガナ
+    gender: str = ""                 # 性別 (男/女)
+    email: str = ""                  # メールアドレス（eラーニング時必須）
+    office_name: str = ""            # 所属事業所（本社以外の場合）
+    location_home: str = ""          # 受講場所（在宅の場合）
+    location_name: str = ""          # 受講場所（名称・住所）
+    contract_checked: str = ""       # 雇用契約書チェック
 
 
 @dataclass
@@ -60,48 +68,83 @@ def validate_insurance_number(number: str) -> bool:
 def read_participant_excel(uploaded_file) -> Optional[pd.DataFrame]:
     """アップロードされたExcelファイルを読み込む"""
     try:
-        # ファイルをDataFrameとして読み込み
         df = pd.read_excel(uploaded_file, sheet_name=0)
-
-        # 期待するカラム名
-        expected_columns = ['No', '氏名', '雇用保険被保険者番号', '雇用形態',
-                          'カリキュラム名', '訓練開始日', '訓練終了日', '受講料', '助成コース']
 
         # カラム名の正規化（改行や空白を削除）
         df.columns = [str(col).replace('\n', '').replace(' ', '').strip() for col in df.columns]
 
-        # 必要なカラムの存在確認
-        missing_columns = []
-        column_mapping = {}
-        for expected in expected_columns:
-            found = False
-            for actual in df.columns:
-                if expected.replace('(', '（').replace(')', '）') in actual or \
-                   expected in actual.replace('（', '(').replace('）', ')'):
-                    column_mapping[actual] = expected
-                    found = True
-                    break
-            if not found and expected != 'No':  # Noは任意
-                missing_columns.append(expected)
+        # 必須カラム + オプションカラム
+        # 「雇用区分」と旧「雇用形態」を相互互換にする
+        required_columns = ['氏名', '雇用保険被保険者番号',
+                            'カリキュラム名', '訓練開始日', '訓練終了日',
+                            '受講料', '助成コース']
+        optional_columns = ['No', 'フリガナ', '性別', 'メールアドレス',
+                            '所属事業所', '受講場所(在宅の場合)', '受講場所(名称・住所)',
+                            '雇用契約書チェック']
 
-        if missing_columns:
-            st.error(f"以下のカラムが見つかりません: {', '.join(missing_columns)}")
+        def find_column(target: str) -> Optional[str]:
+            """カラム名を緩く照合（カッコ・全半角差を吸収）"""
+            t_norm = target.replace('(', '（').replace(')', '）')
+            for actual in df.columns:
+                a_norm = actual.replace('(', '（').replace(')', '）')
+                if t_norm in a_norm or target in actual:
+                    return actual
             return None
 
-        # カラム名をリネーム
+        # 雇用区分（または旧称: 雇用形態）
+        emp_col = find_column('雇用区分') or find_column('雇用形態')
+        column_mapping = {}
+        if emp_col:
+            column_mapping[emp_col] = '雇用区分'
+
+        missing = []
+        for col in required_columns:
+            actual = find_column(col)
+            if actual:
+                column_mapping[actual] = col
+            else:
+                missing.append(col)
+        if not emp_col:
+            missing.append('雇用区分（または雇用形態）')
+
+        if missing:
+            st.error(f"以下のカラムが見つかりません: {', '.join(missing)}")
+            return None
+
+        for col in optional_columns:
+            actual = find_column(col)
+            if actual and actual not in column_mapping:
+                column_mapping[actual] = col
+
         df = df.rename(columns=column_mapping)
-
-        # 空行を削除
         df = df.dropna(how='all')
-
-        # 氏名が空の行を削除
         df = df[df['氏名'].notna() & (df['氏名'] != '')]
-
+        # 例行（氏名が「例）」「(例)」を含むなど）を除去
+        df = df[~df['氏名'].astype(str).str.match(r'^[\(（]?例[\)）]?\s')]
         return df
 
     except Exception as e:
         st.error(f"Excelファイルの読み込みエラー: {str(e)}")
         return None
+
+
+def _normalize_gender(value) -> str:
+    """性別の値を '男'/'女'/'' に正規化"""
+    if value is None or pd.isna(value):
+        return ''
+    s = str(value).strip()
+    if s in ('男', '男性', 'M', 'm', 'male', 'Male'):
+        return '男'
+    if s in ('女', '女性', 'F', 'f', 'female', 'Female'):
+        return '女'
+    return s  # 不明値はそのまま保持
+
+
+def _safe_str(value) -> str:
+    """NaN/None を空文字に変換"""
+    if value is None or pd.isna(value):
+        return ''
+    return str(value).strip()
 
 
 def validate_participants(df: pd.DataFrame) -> tuple[List[str], List[Participant]]:
@@ -122,10 +165,12 @@ def validate_participants(df: pd.DataFrame) -> tuple[List[str], List[Participant
         if not validate_insurance_number(insurance_num):
             errors.append(f"行{row_num}: 被保険者番号の形式が不正です（4桁-6桁-1桁の形式で入力してください）")
 
-        # 雇用形態チェック
-        emp_type = str(row.get('雇用形態', ''))
-        if emp_type not in ['正規雇用', '有期契約']:
-            errors.append(f"行{row_num}: 雇用形態は「正規雇用」または「有期契約」を入力してください")
+        # 雇用区分チェック（「正規雇用労働者等」「有期契約労働者等」など各種表記を許容）
+        emp_type = _safe_str(row.get('雇用区分', '') or row.get('雇用形態', ''))
+        if not emp_type:
+            errors.append(f"行{row_num}: 雇用区分が入力されていません")
+        elif not ('正規' in emp_type or '有期' in emp_type):
+            errors.append(f"行{row_num}: 雇用区分は「正規雇用」「有期契約」等で入力してください（実際の値: {emp_type}）")
 
         # カリキュラム名チェック
         curriculum = row.get('カリキュラム名')
@@ -146,14 +191,23 @@ def validate_participants(df: pd.DataFrame) -> tuple[List[str], List[Participant
         tuition = row.get('受講料(税抜)', row.get('受講料', 0))
         try:
             tuition = float(tuition) if not pd.isna(tuition) else 0
-        except ValueError:
+        except (ValueError, TypeError):
             errors.append(f"行{row_num}: 受講料は数値で入力してください")
             tuition = 0
 
         # 助成コースチェック
-        subsidy = str(row.get('助成コース', ''))
+        subsidy = _safe_str(row.get('助成コース', ''))
         if subsidy not in ['リスキリング', '定額制']:
             errors.append(f"行{row_num}: 助成コースは「リスキリング」または「定額制」を入力してください")
+
+        # 拡張フィールド（オプション）
+        gender = _normalize_gender(row.get('性別'))
+        furigana = _safe_str(row.get('フリガナ'))
+        email = _safe_str(row.get('メールアドレス'))
+        office_name = _safe_str(row.get('所属事業所'))
+        location_home = _safe_str(row.get('受講場所(在宅の場合)'))
+        location_name = _safe_str(row.get('受講場所(名称・住所)'))
+        contract_checked = _safe_str(row.get('雇用契約書チェック'))
 
         # Participantオブジェクト作成
         if start_date and end_date:
@@ -166,7 +220,14 @@ def validate_participants(df: pd.DataFrame) -> tuple[List[str], List[Participant
                 start_date=start_date,
                 end_date=end_date,
                 tuition_fee=tuition,
-                subsidy_course=subsidy
+                subsidy_course=subsidy,
+                furigana=furigana,
+                gender=gender,
+                email=email,
+                office_name=office_name,
+                location_home=location_home,
+                location_name=location_name,
+                contract_checked=contract_checked,
             )
             participants.append(participant)
 
