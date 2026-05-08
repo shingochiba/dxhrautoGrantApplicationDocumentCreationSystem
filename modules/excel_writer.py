@@ -197,7 +197,8 @@ class ExcelWriter:
                          teigaku: bool = False) -> str:
         """04_事前確認書(様式第11号) 通常版 / 定額制版"""
         if teigaku:
-            template = "計画申請/04_事前確認書(様式第11号)_定額制.xlsx"
+            # 定額制の場合は ※定額制 とついた書類を優先
+            template = "計画申請/04_事前確認書(様式第11号)※定額制.xlsx"
             suffix = "_定額制"
         else:
             template = "計画申請/04_事前確認書(様式第11号).xlsx"

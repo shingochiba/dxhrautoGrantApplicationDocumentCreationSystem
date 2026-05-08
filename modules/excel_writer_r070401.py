@@ -180,6 +180,56 @@ class ExcelWriterR070401(ExcelWriter):
             fname, values
         )
 
+    def write_様式14_1(self, company: CompanyInfo, group: CurriculumGroup,
+                       submit_date: datetime) -> str:
+        """05_様式第14-1号 ※定額制 定額制サービスによる訓練に関する事業所確認票（R070401 新規）
+
+        セル位置は R80302 の様式14-1号 と同じ。
+        """
+        offices = company.offices or []
+        if offices:
+            head = offices[0]
+            head_name = head.name or company.company_name
+            head_ins = head.insurance_number or company.insurance_office_number
+            head_emp = head.employee_count or 0
+        else:
+            head_name = company.company_name
+            head_ins = company.insurance_office_number
+            head_emp = 0
+
+        i1, i2, i3 = split_insurance_number(head_ins)
+
+        values = {
+            'O3': submit_date.year, 'T3': submit_date.month, 'V3': submit_date.day,
+            'J8': company.company_name,
+            'J10': company.address,
+            'A12': group.curriculum_name,
+            'A16': head_name,
+            'G16': i1, 'L16': i2, 'S16': i3,
+            'T16': head_emp if head_emp else "",
+        }
+
+        subsidiary = offices[1:] if len(offices) > 1 else []
+        office_rows = [21, 23, 25, 27, 29, 31, 33, 35, 37, 39]
+        for idx, office in enumerate(subsidiary[:10]):
+            r = office_rows[idx]
+            s1, s2, s3 = split_insurance_number(office.insurance_number)
+            values[f'B{r}'] = office.name
+            values[f'G{r}'] = s1
+            values[f'L{r}'] = s2
+            values[f'S{r}'] = s3
+            if office.employee_count:
+                values[f'T{r}'] = office.employee_count
+
+        total_offices = max(1, len(offices)) if offices else 1
+        values['R12'] = total_offices
+
+        fname = f"05_様式14-1号_{company.company_name}_{group.curriculum_name}.xlsx"
+        return self._patch(
+            "計画申請/05_定額制サービスによる訓練に関する事業所確認票(様式第14-1号)※定額制.xlsx",
+            fname, values
+        )
+
     def write_事前確認書(self, company: CompanyInfo, sr: SocialInsuranceLabor,
                          group: CurriculumGroup, submit_date: datetime,
                          teigaku: bool = False) -> str:
@@ -292,6 +342,38 @@ class ExcelWriterR070401(ExcelWriter):
             fname, values
         )
 
+    def write_経費助成内訳_定額制(self, company: CompanyInfo, group: CurriculumGroup) -> str:
+        """06_様式第6-3号 ※定額制 定額制サービスによる訓練に関する経費助成の内訳（R070401 新規）
+
+        定額制ケース用。様式6-2号 の代わりに使用する。
+        マージセル分析で特定したデータ位置:
+          - 訓練コース名 (3) → AG6
+          - 助成対象労働者数 (4) → J7
+          - 訓練の実施期間 始日 → M8/R8/W8 (年/月/日)
+          - 訓練の実施期間 終日 → AF8/AK8/AP8 (年/月/日)
+        """
+        values = {
+            # 3 訓練コース名
+            'AG6': group.curriculum_name,
+            # 4 助成対象労働者数
+            'J7': len(group.participants),
+        }
+        # 6 訓練の実施期間
+        if group.start_date:
+            values['M8'] = group.start_date.year
+            values['R8'] = group.start_date.month
+            values['W8'] = group.start_date.day
+        if group.end_date:
+            values['AF8'] = group.end_date.year
+            values['AK8'] = group.end_date.month
+            values['AP8'] = group.end_date.day
+
+        fname = f"06_様式6-3号_{group.curriculum_name}_{company.company_name}.xlsx"
+        return self._patch(
+            "支給申請/06_定額制サービスによる訓練に関する経費助成の内訳(様式第6-3号)※定額制.xlsx",
+            fname, values
+        )
+
     def write_対象者一覧_支給(self, company: CompanyInfo, group: CurriculumGroup) -> str:
         """03_対象労働者一覧 - R070401版（計画申請の3-1号と同じ新レイアウト）"""
         fname = f"03_対象労働者一覧(支給)_{group.curriculum_name}_{company.company_name}.xlsx"
@@ -375,7 +457,7 @@ class ExcelWriterR070401(ExcelWriter):
 
         現行との差分:
           - Word書類（事業内職業能力開発計画）は無し
-          - 様式14-1号 は無し
+          - 定額制の場合のみ 様式14-1号 (※定額制) を追加
         """
         generated = []
         teigaku = is_teigaku_course(group.subsidy_course)
@@ -390,6 +472,8 @@ class ExcelWriterR070401(ExcelWriter):
             jobs.append(("対象者一覧(3-1)", lambda: self.write_対象者一覧_3_1(company, group)))
         jobs.append(("事前確認書",
                      lambda: self.write_事前確認書(company, sr, group, submit_date, teigaku=teigaku)))
+        if teigaku:
+            jobs.append(("様式14-1号", lambda: self.write_様式14_1(company, group, submit_date)))
 
         for label, fn in jobs:
             try:
@@ -407,15 +491,26 @@ class ExcelWriterR070401(ExcelWriter):
         現行との差分:
           - 支給申請承諾書(様式12号) は R070401 には無いのでスキップ
           - 対象者一覧(様式3-1号 新形式) を支給申請にも含める
+          - 定額制の場合は 様式6-3号 (※定額制) を使用、通常は 様式6-2号 を使用
         """
         generated = []
+        teigaku = is_teigaku_course(group.subsidy_course)
+
         jobs = [
             ("支給申請書", lambda: self.write_支給申請書(company, sr, group, submit_date)),
-            ("経費助成内訳", lambda: self.write_経費助成内訳(company, group)),
+        ]
+        # 経費助成内訳: 定額制は 様式6-3号、通常は 様式6-2号
+        if teigaku:
+            jobs.append(("経費助成内訳(6-3号定額制)",
+                         lambda: self.write_経費助成内訳_定額制(company, group)))
+        else:
+            jobs.append(("経費助成内訳(6-2号)",
+                         lambda: self.write_経費助成内訳(company, group)))
+        jobs.extend([
             ("対象者一覧(支給)", lambda: self.write_対象者一覧_支給(company, group)),
             ("賃金助成内訳", lambda: self.write_賃金助成内訳(company, group)),
             ("事業所確認票", lambda: self.write_事業所確認票(company, group, submit_date)),
-        ]
+        ])
         for label, fn in jobs:
             try:
                 generated.append(fn())
