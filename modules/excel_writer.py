@@ -177,7 +177,12 @@ class ExcelWriter:
         return self._patch("計画申請/03_対象者一覧(様式第3-1号).xlsx", fname, values)
 
     def write_対象者一覧_3_2(self, company: CompanyInfo, group: CurriculumGroup) -> str:
-        """03_対象者一覧(様式第3-2号) 定額制用"""
+        """03_対象者一覧(様式第3-2号) 定額制用
+
+        テンプレート列構造:
+          A: 番号（自動採番済み）, B: 氏名, C-F(merged): 正規雇用マーク, G-J(merged): 有期契約マーク
+        ※ このフォームには保険番号欄は無い
+        """
         values = {
             'C11': company.company_name,
             'C12': group.curriculum_name,
@@ -185,9 +190,13 @@ class ExcelWriter:
         start_row = 16
         for idx, p in enumerate(group.participants):
             r = start_row + idx
-            values[f'B{r}'] = idx + 1
-            values[f'C{r}'] = p.name
-            values[f'G{r}'] = p.insurance_number
+            # A{r} は事前採番済みなのでスキップ。B{r} に氏名。
+            values[f'B{r}'] = p.name
+            # 雇用形態に応じてマーク列を選択（C=正規雇用、G=有期契約）
+            if '正規' in p.employment_type:
+                values[f'C{r}'] = '○'
+            elif '有期' in p.employment_type:
+                values[f'G{r}'] = '○'
 
         fname = f"03_対象者一覧(3-2)_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch("計画申請/03_対象者一覧(様式第3-2号)_定額制.xlsx", fname, values)

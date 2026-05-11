@@ -162,7 +162,10 @@ class ExcelWriterR070401(ExcelWriter):
         )
 
     def write_対象者一覧_3_2(self, company: CompanyInfo, group: CurriculumGroup) -> str:
-        """03_対象労働者一覧(様式第3-2号)定額制 - R070401版（位置は現行と同じ）"""
+        """03_対象労働者一覧(様式第3-2号)定額制 - R070401版
+
+        列構造: A=番号(自動), B=氏名, C-F(merged)=正規雇用マーク, G-J(merged)=有期契約マーク
+        """
         values = {
             'C11': company.company_name,
             'C12': group.curriculum_name,
@@ -170,9 +173,11 @@ class ExcelWriterR070401(ExcelWriter):
         start_row = 16
         for idx, p in enumerate(group.participants):
             r = start_row + idx
-            values[f'B{r}'] = idx + 1
-            values[f'C{r}'] = p.name
-            values[f'G{r}'] = p.insurance_number
+            values[f'B{r}'] = p.name
+            if '正規' in p.employment_type:
+                values[f'C{r}'] = '○'
+            elif '有期' in p.employment_type:
+                values[f'G{r}'] = '○'
 
         fname = f"03_対象労働者一覧(3-2)_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch(
@@ -199,11 +204,19 @@ class ExcelWriterR070401(ExcelWriter):
 
         i1, i2, i3 = split_insurance_number(head_ins)
 
+        # マージセル分析に基づくデータセル位置
         values = {
-            'O3': submit_date.year, 'T3': submit_date.month, 'V3': submit_date.day,
-            'J8': company.company_name,
-            'J10': company.address,
-            'A12': group.curriculum_name,
+            # 提出日 (R3:S3 merged=年, U3=月, W3=日)
+            'R3': submit_date.year,
+            'U3': submit_date.month,
+            'W3': submit_date.day,
+            # 事業主名 (M8:X8 merged)
+            'M8': company.company_name,
+            # 所在地 (M10:X10 merged)
+            'M10': company.address,
+            # 訓練コース名 (F12:P12 merged)
+            'F12': group.curriculum_name,
+            # 申請事業所（本社）行16-17
             'A16': head_name,
             'G16': i1, 'L16': i2, 'S16': i3,
             'T16': head_emp if head_emp else "",
@@ -221,8 +234,9 @@ class ExcelWriterR070401(ExcelWriter):
             if office.employee_count:
                 values[f'T{r}'] = office.employee_count
 
+        # 事業所数 (U12:V12 merged)
         total_offices = max(1, len(offices)) if offices else 1
-        values['R12'] = total_offices
+        values['U12'] = total_offices
 
         fname = f"05_様式14-1号_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch(
