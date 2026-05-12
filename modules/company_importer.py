@@ -74,6 +74,67 @@ def _parse_int(val) -> int:
         return 0
 
 
+# 47都道府県（住所文字列の先頭マッチ用）
+_PREFECTURES = [
+    '北海道', '青森県', '岩手県', '宮城県', '秋田県', '山形県', '福島県',
+    '茨城県', '栃木県', '群馬県', '埼玉県', '千葉県', '東京都', '神奈川県',
+    '新潟県', '富山県', '石川県', '福井県', '山梨県', '長野県',
+    '岐阜県', '静岡県', '愛知県', '三重県',
+    '滋賀県', '京都府', '大阪府', '兵庫県', '奈良県', '和歌山県',
+    '鳥取県', '島根県', '岡山県', '広島県', '山口県',
+    '徳島県', '香川県', '愛媛県', '高知県',
+    '福岡県', '佐賀県', '長崎県', '熊本県', '大分県', '宮崎県', '鹿児島県',
+    '沖縄県',
+]
+
+
+def detect_prefecture(address: str) -> Optional[str]:
+    """住所文字列の先頭から都道府県名を抽出"""
+    if not address:
+        return None
+    s = str(address).strip()
+    for pref in _PREFECTURES:
+        if s.startswith(pref):
+            return pref
+    return None
+
+
+def prefecture_to_labor_bureau(prefecture: Optional[str]) -> str:
+    """都道府県名から対応する労働局名を導出
+    例: '東京都' → '東京労働局', '北海道' → '北海道労働局',
+        '大阪府' → '大阪労働局', '京都府' → '京都労働局'
+    """
+    if not prefecture:
+        return ""
+    if prefecture == "北海道":
+        return "北海道労働局"
+    # 都/府/県 を1文字だけ削除（rstrip だと京都府→京 になるため [:-1] を使う）
+    if prefecture[-1] in ("都", "府", "県"):
+        return prefecture[:-1] + "労働局"
+    return prefecture + "労働局"
+
+
+def _find_employee_count_by_label(ws, max_row: int = 30) -> int:
+    """シート内で「従業員数」「常時雇用」を含むラベルを探し、隣接セルの値を返す
+
+    ラベル検索の優先度: 同じ行の右側 → 次の列
+    """
+    for row in ws.iter_rows(min_row=1, max_row=max_row):
+        for cell in row:
+            if cell.value is None:
+                continue
+            label = str(cell.value).strip()
+            if not any(kw in label for kw in ('従業員数', '常時雇用')):
+                continue
+            # 同じ行の右側を探す
+            for col_offset in range(1, 12):
+                target = ws.cell(row=cell.row, column=cell.column + col_offset)
+                emp = _parse_int(target.value)
+                if emp > 0:
+                    return emp
+    return 0
+
+
 def _find_sheet(wb, *keywords) -> Optional[str]:
     """シート名に指定キーワードが含まれる最初のシート名を返す"""
     for sn in wb.sheetnames:
@@ -187,6 +248,13 @@ def import_company_from_excel(file_bytes: bytes) -> Tuple[Optional[CompanyInfo],
         ws2 = wb[office_sheet_name]
         # G22 or C22 いずれかに合計があるはず
         employee_count_total = _parse_int(ws2['G22'].value) or _parse_int(ws2['C22'].value)
+        # それでも取れない場合はラベル検索
+        if employee_count_total == 0:
+            employee_count_total = _find_employee_count_by_label(ws2)
+
+    # ①シートでも C9 で取れなければラベル検索を試みる
+    if employee_count_main == 0:
+        employee_count_main = _find_employee_count_by_label(ws)
 
     employee_count = employee_count_total if employee_count_total > 0 else employee_count_main
     if employee_count == 0:
@@ -203,6 +271,10 @@ def import_company_from_excel(file_bytes: bytes) -> Tuple[Optional[CompanyInfo],
         if not insurance_office_number and head.insurance_number:
             insurance_office_number = head.insurance_number
 
+    # 本社所在地の都道府県から労働局を自動判定
+    pref = detect_prefecture(address)
+    labor_bureau = prefecture_to_labor_bureau(pref) if pref else ""
+
     company = CompanyInfo(
         company_name=company_name,
         insurance_office_number=insurance_office_number,
@@ -214,7 +286,7 @@ def import_company_from_excel(file_bytes: bytes) -> Tuple[Optional[CompanyInfo],
         phone_number=phone_number,
         main_business="",  # このシートには含まれない（産業分類番号のみ）
         employee_count=employee_count,
-        labor_bureau="",   # このシートには含まれない
+        labor_bureau=labor_bureau,
         representative_name=rep_name,
         representative_title=rep_title,
         corporate_number=corporate_number,
@@ -228,6 +300,10 @@ def import_company_from_excel(file_bytes: bytes) -> Tuple[Optional[CompanyInfo],
         import_warnings.append("本社所在地（C5）が空欄または郵便番号形式が不正です")
     if not contact_name:
         import_warnings.append("助成金担当者名（C14）が空欄です")
-    import_warnings.append("「主たる事業」「管轄労働局」はシートに含まれないため、手動で入力してください。")
+    if labor_bureau:
+        import_warnings.append(f"管轄労働局を住所から自動判定しました：{labor_bureau}")
+    else:
+        import_warnings.append("「管轄労働局」は住所から自動判定できなかったため、手動で選択してください。")
+    import_warnings.append("「主たる事業」はシートに含まれないため、手動で入力してください。")
 
     return (company, import_warnings)

@@ -276,6 +276,16 @@ def render_company_form() -> Optional[CompanyInfo]:
             st.error(error)
         return None
 
+    # 住所の都道府県から労働局を自動判定（自動入力ロジック）
+    # 住所から都道府県が明確に読み取れる場合は、ドロップダウンの値より住所優先
+    from .company_importer import detect_prefecture, prefecture_to_labor_bureau
+    detected_pref = detect_prefecture(address)
+    if detected_pref:
+        suggested_bureau = prefecture_to_labor_bureau(detected_pref)
+        if suggested_bureau in LABOR_BUREAUS and suggested_bureau != labor_bureau:
+            labor_bureau = suggested_bureau
+            st.info(f"📍 住所「{detected_pref}」から管轄労働局を「{suggested_bureau}」に自動設定しました。")
+
     # 既存のofficesを保持
     existing = st.session_state.get('company_info')
     existing_offices = list(existing.offices) if existing and getattr(existing, 'offices', None) else []
