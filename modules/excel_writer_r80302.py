@@ -341,14 +341,21 @@ class ExcelWriterR80302(ExcelWriter):
         )
 
     def write_経費助成内訳(self, company: CompanyInfo, group: CurriculumGroup) -> str:
-        """02_経費助成の内訳(様式第6-2号) - R80302版（セル位置は現行と同じ）"""
+        """02_経費助成の内訳(様式第6-2号) - R80302（R8.3）版
+
+        新レイアウト（マージセル分析）:
+          - B7:I7 = '職業訓練実施計画届の受付番号' ラベル
+          - J7:W7 = 受付番号データ（外部付与のため空のまま）
+          - Y7:AD7 = '雇用保険適用事業所の名称' ラベル
+          - AE7:AT7 = 雇用保険適用事業所の名称データ
+          ※ この様式に労働局は無い（様式5号と同じ）
+        """
         values = {
-            'J7': labor_bureau_short(company.labor_bureau),
             'AE7': get_insurance_office_name(company),
         }
         fname = f"02_経費助成の内訳_{group.curriculum_name}_{company.company_name}.xlsx"
         return self._patch(
-            "支給申請/02_経費助成の内訳(様式第6-2号)_研修名_企業名(eラーニング).xlsx",
+            "支給申請/02_経費助成の内訳(様式第6-2号)_研修名_.xlsx",
             fname, values
         )
 
