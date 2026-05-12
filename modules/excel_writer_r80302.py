@@ -318,15 +318,21 @@ class ExcelWriterR80302(ExcelWriter):
             'AF21': spp1, 'AM21': spp2, 'AT21': spp3,
             'K26': company.main_business,
             'K27': company.employee_count,
+            # R80302 (R8.3) では「設備投資加算」セクションが削除されたため
+            # 雇用保険適用事業所名以降は -1 行（row 30→29、31→30、32→31、37→36）
             # 雇用保険適用事業所名（offices[0].name 優先）
-            'K30': get_insurance_office_name(company),
-            'AN30': i1, 'AS30': i2, 'AZ30': i3,
-            'R31': company.contact_name,
-            'AM31': company.contact_department,
-            'R32': cp1, 'W32': cp2, 'AB32': cp3,
-            'AM32': company.contact_email,
-            'M37': male,
-            'AM37': female,
+            'K29': get_insurance_office_name(company),
+            # 雇用保険番号 4桁-6桁-1桁
+            'AN29': i1, 'AS29': i2, 'AZ29': i3,
+            # 担当者氏名・所属
+            'R30': company.contact_name,
+            'AM30': company.contact_department,
+            # 電話番号 + メール
+            'R31': cp1, 'W31': cp2, 'AB31': cp3,
+            'AM31': company.contact_email,
+            # 男女別受講者数
+            'M36': male,
+            'AM36': female,
         }
         if company.corporate_number:
             digits = str(company.corporate_number).replace('-', '').strip()
