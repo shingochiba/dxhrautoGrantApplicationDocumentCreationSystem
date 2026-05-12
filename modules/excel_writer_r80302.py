@@ -282,7 +282,7 @@ class ExcelWriterR80302(ExcelWriter):
 
         fname = f"06_様式14-1号_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch(
-            "計画申請/06_人材開発支援助成金（事業展開等リスキリング支援コース）定額制サービスによる訓練に関する事業所確認票(様式第14-1号).xlsx",
+            "計画申請/06_人材開発支援助成金（事業展開等リスキリング支援コース）定額制サービスによる訓練に関する事業所確認票(様式第14-1号)※定額制.xlsx",
             fname, values
         )
 
@@ -362,10 +362,14 @@ class ExcelWriterR80302(ExcelWriter):
     def write_賃金助成内訳(self, company: CompanyInfo, group: CurriculumGroup) -> str:
         """03_賃金助成の内訳(様式第5号) - R80302版
 
-        修正点（PPT指摘事項）:
-          - P7 (受付番号エリア) labor_bureau 書き込み削除
+        修正点:
           - BA7 = 雇用保険適用事業所名（offices[0].name 優先）
           - 行22以降の支給対象労働者一覧にデータを追加
+          - ファイル名から (インタラクティブのみ) を削除
+
+        ⚠️ 注意: 現在 R80302 の '03_賃金助成の内訳(様式第5号)_研修名_企業名.xlsx' の
+           中身が様式6-2号（経費助成の内訳）になっている可能性があります。
+           正しい様式5号テンプレートに差し替えてください。
         """
         values = {
             'BA7': get_insurance_office_name(company),
@@ -378,7 +382,36 @@ class ExcelWriterR80302(ExcelWriter):
             values[f'T{r}'] = (p.insurance_number or "").replace('−', '-').replace('ー', '-')
         fname = f"03_賃金助成の内訳_{group.curriculum_name}_{company.company_name}.xlsx"
         return self._patch(
-            "支給申請/03_賃金助成の内訳(様式第5号)_研修名_企業名(インタラクティブのみ).xlsx",
+            "支給申請/03_賃金助成の内訳(様式第5号)_研修名_企業名.xlsx",
+            fname, values
+        )
+
+    def write_経費助成内訳_定額制(self, company: CompanyInfo, group: CurriculumGroup) -> str:
+        """03_様式第6-3号 ※定額制 定額制サービスによる訓練に関する経費助成の内訳（R80302 新規）
+
+        定額制ケース用。様式6-2号 の代わりに使用する。
+        マージセル分析で特定したデータ位置（R070401 と同じ）:
+          - 訓練コース名 (3) → AG6
+          - 助成対象労働者数 (4) → J7
+          - 訓練の実施期間 始日 → M8/R8/W8 (年/月/日)
+          - 訓練の実施期間 終日 → AF8/AK8/AP8 (年/月/日)
+        """
+        values = {
+            'AG6': group.curriculum_name,
+            'J7': len(group.participants),
+        }
+        if group.start_date:
+            values['M8'] = group.start_date.year
+            values['R8'] = group.start_date.month
+            values['W8'] = group.start_date.day
+        if group.end_date:
+            values['AF8'] = group.end_date.year
+            values['AK8'] = group.end_date.month
+            values['AP8'] = group.end_date.day
+
+        fname = f"03_様式6-3号_{group.curriculum_name}_{company.company_name}.xlsx"
+        return self._patch(
+            "支給申請/03_定額制サービスによる訓練に関する経費助成の内訳(様式第6-3号)※定額制.xlsx",
             fname, values
         )
 
@@ -532,19 +565,33 @@ class ExcelWriterR80302(ExcelWriter):
                                     group: CurriculumGroup, submit_date: datetime) -> List[str]:
         """支給申請書類の一括生成（R80302）
 
-        現行との差分:
-          - 対象者一覧(様式3-1号) を追加（支給申請にも含まれる）
-          - 支給申請承諾書(様式12号) のテンプレート名・内部構成が異なる
+        最新の支給申請フォルダ構成:
+          - 01_支給申請書(様式4-2号)
+          - 02_経費助成の内訳(様式6-2号) ← 通常時のみ
+          - 03_様式6-3号 ※定額制 ← 定額制時のみ
+          - 03_賃金助成の内訳(様式5号)
+          - 04_支給申請承諾書(様式12号)
+          - 05_事業所確認票(様式13号)
+          ※ 様式3-1号(対象者一覧) は R80302 支給申請から削除済み
         """
         generated = []
+        teigaku = is_teigaku_course(group.subsidy_course)
+
         jobs = [
             ("支給申請書", lambda: self.write_支給申請書(company, sr, group, submit_date)),
-            ("経費助成内訳", lambda: self.write_経費助成内訳(company, group)),
-            ("対象者一覧(支給)", lambda: self.write_対象者一覧_支給_3_1(company, group)),
+        ]
+        # 経費助成内訳: 定額制は 様式6-3号、通常は 様式6-2号
+        if teigaku:
+            jobs.append(("経費助成内訳(6-3号定額制)",
+                         lambda: self.write_経費助成内訳_定額制(company, group)))
+        else:
+            jobs.append(("経費助成内訳(6-2号)",
+                         lambda: self.write_経費助成内訳(company, group)))
+        jobs.extend([
             ("賃金助成内訳", lambda: self.write_賃金助成内訳(company, group)),
             ("支給申請承諾書", lambda: self.write_支給申請承諾書(company, group, submit_date)),
             ("事業所確認票", lambda: self.write_事業所確認票(company, group, submit_date)),
-        ]
+        ])
         for label, fn in jobs:
             try:
                 generated.append(fn())

@@ -21,6 +21,7 @@ from modules.upload_handler import (
     render_upload_form, get_saved_participant_groups
 )
 from modules.document_generator import DocumentGenerator, FORMAT_CONFIGS, get_format_label
+from modules.excel_writer import is_teigaku_course
 from modules.storage import load_saved_company, load_saved_sr, clear_saved
 from modules.auth import render_login_gate, get_current_user, logout
 
@@ -306,8 +307,10 @@ def render_step4():
     st.subheader("カリキュラムの選択")
     selected_curricula = []
     for key, group in groups.items():
+        teigaku = is_teigaku_course(group.subsidy_course)
+        teigaku_mark = "🟢 **定額制として認識**" if teigaku else "⚪ 通常コース"
         if st.checkbox(
-            f"📚 {group.curriculum_name}（{group.subsidy_course}）- {len(group.participants)}名",
+            f"📚 {group.curriculum_name}（{group.subsidy_course}）- {len(group.participants)}名  ｜  {teigaku_mark}",
             value=True,
             key=f"curriculum_{key}"
         ):
@@ -362,6 +365,24 @@ def render_step5():
             "この書式は自動入力に対応していないため、テンプレート一式をそのまま出力します。"
         )
 
+    # 各カリキュラムの定額制判定を表示
+    with st.expander("🔍 生成対象カリキュラム (定額制判定の確認)", expanded=True):
+        for key in selected_curricula:
+            grp = groups.get(key)
+            if not grp:
+                continue
+            teigaku = is_teigaku_course(grp.subsidy_course)
+            if teigaku:
+                st.success(
+                    f"🟢 **{grp.curriculum_name}** （助成コース: `{grp.subsidy_course}`） "
+                    f"→ **定額制として認識** → 様式3-2号 / 様式11号(定額制版) 等を生成"
+                )
+            else:
+                st.info(
+                    f"⚪ **{grp.curriculum_name}** （助成コース: `{grp.subsidy_course}`） "
+                    f"→ 通常コース → 様式3-1号 / 様式11号(通常版) 等を生成"
+                )
+
     # 生成実行
     if 'generated_files' not in st.session_state:
         with st.spinner("書類を生成中..."):
@@ -408,12 +429,31 @@ def render_step5():
         st.success(f"✅ {len(generated_files)}件のZIPファイルを生成しました！")
 
         st.subheader("生成されたファイル")
+        import zipfile as _zipfile
         for curriculum_key, zip_path in generated_files.items():
             group = groups.get(curriculum_key)
             if group:
-                st.markdown(f"### 📚 {group.curriculum_name}")
+                teigaku = is_teigaku_course(group.subsidy_course)
+                badge = "🟢 定額制" if teigaku else "⚪ 通常"
+                st.markdown(f"### 📚 {group.curriculum_name}  ｜  {badge}")
 
             if os.path.exists(zip_path):
+                # ZIP の中身を表示（定額制かどうかが分かる）
+                try:
+                    with _zipfile.ZipFile(zip_path) as zf:
+                        names = sorted(zf.namelist())
+                    with st.expander(f"📂 ZIPの中身を確認 ({len(names)}件)", expanded=False):
+                        for n in names:
+                            marker = ""
+                            if "3-2" in n: marker = "  ← 様式3-2号(定額制)"
+                            elif "3-1" in n: marker = "  ← 様式3-1号(通常)"
+                            elif "14-1" in n: marker = "  ← 様式14-1号(定額制)"
+                            elif "6-3" in n: marker = "  ← 様式6-3号(定額制)"
+                            elif "_定額制" in n: marker = "  ← 定額制版"
+                            st.text(f"  • {n}{marker}")
+                except Exception:
+                    pass
+
                 with open(zip_path, "rb") as f:
                     file_name = os.path.basename(zip_path)
                     st.download_button(
