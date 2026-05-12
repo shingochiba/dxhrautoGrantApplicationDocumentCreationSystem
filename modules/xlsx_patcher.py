@@ -178,8 +178,10 @@ def patch_xlsx(template_path: str | Path,
     sheet_xml = sheet_xml_bytes.decode('utf-8-sig' if has_bom else 'utf-8')
 
     # 各セル値を書き換え
+    # 注: 空文字列 "" はセルクリア用途で許容（テンプレートのプレースホルダ '●' 等を消す目的）
+    # None のみ「書き込まない」スキップ対象とする
     for ref, value in cell_values.items():
-        if value is None or value == "":
+        if value is None:
             continue
         target_ref = _resolve_merged_cell_target(sheet_xml, ref)
         sheet_xml = _replace_or_insert_cell(sheet_xml, target_ref, value)

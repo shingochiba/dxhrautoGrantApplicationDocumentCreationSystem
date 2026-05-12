@@ -15,6 +15,7 @@ from .upload_handler import CurriculumGroup
 from .excel_writer import (
     ExcelWriter, is_teigaku_course,
     split_postal, split_phone, split_insurance_number,
+    labor_bureau_short, get_insurance_office_name,
 )
 
 
@@ -42,11 +43,25 @@ class ExcelWriterR80302(ExcelWriter):
         if male + female == 0:
             male = len(group.participants)
 
+        teigaku = is_teigaku_course(group.subsidy_course)
+        insurance_office_name = get_insurance_office_name(company)
+
+        # 受講場所: 1人目の受講者情報から組み立て
+        first_p = group.participants[0] if group.participants else None
+        location_value = ""
+        if first_p:
+            if getattr(first_p, 'location_home', '').strip():
+                location_value = first_p.location_home.strip()
+            elif getattr(first_p, 'location_name', '').strip():
+                location_value = first_p.location_name.strip()
+        if not location_value:
+            location_value = f"本社({company.address})"
+
         values = {
             # 提出日
             'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': submit_date.day,
-            # 管轄労働局
-            'B7': company.labor_bureau,
+            # 管轄労働局（県名のみ）
+            'B7': labor_bureau_short(company.labor_bureau),
             # 事業主 郵便番号/住所/名称/代表者/法人番号
             'AG9': p1, 'AL9': p2,
             'AF10': company.address,
@@ -60,7 +75,7 @@ class ExcelWriterR80302(ExcelWriter):
             'AF20': sr.sr_name if sr else "",
             'AF21': spp1, 'AM21': spp2, 'AT21': spp3,
             # 雇用保険適用事業所
-            'K26': company.company_name,
+            'K26': insurance_office_name,
             'AN26': i1, 'AS26': i2, 'AZ26': i3,
             'M27': p1, 'Q27': p2,
             'K28': company.address,
@@ -72,6 +87,8 @@ class ExcelWriterR80302(ExcelWriter):
             # 訓練コース
             'K42': group.curriculum_name,
             'AN42': len(group.participants),
+            # 訓練の実施場所
+            'K47': location_value,
             # 男女別受講者数（R80302 では行 74 に移動）
             'S74': male, 'AN74': female,
         }
@@ -83,6 +100,20 @@ class ExcelWriterR80302(ExcelWriter):
             values['AI43'] = group.end_date.year
             values['AO43'] = group.end_date.month
             values['AU43'] = group.end_date.day
+
+        # 定額制の場合: 9番「定額制サービスの契約期間」= 8番「訓練の実施期間」と同じ
+        if teigaku:
+            if group.start_date:
+                values['N44'] = group.start_date.year
+                values['T44'] = group.start_date.month
+                values['Z44'] = group.start_date.day
+            if group.end_date:
+                values['AI44'] = group.end_date.year
+                values['AO44'] = group.end_date.month
+                values['AU44'] = group.end_date.day
+            # 13番「標準学習時間」プレースホルダ空欄化（R80302 でも -1 行）
+            values['R54'] = ""
+            values['Y54'] = ""
 
         fname = f"01_職業訓練実施計画届_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch(
@@ -186,7 +217,7 @@ class ExcelWriterR80302(ExcelWriter):
             'R24': sr.office_name if sr else "",
             'R26': sr.sr_name if sr else "",
             'R27': spp1, 'V27': spp2, 'Z27': spp3,
-            'A30': company.labor_bureau,
+            'A30': labor_bureau_short(company.labor_bureau),
         }
         fname = f"04_事前確認書{suffix}_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch(template, fname, values)
@@ -275,7 +306,7 @@ class ExcelWriterR80302(ExcelWriter):
 
         values = {
             'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': submit_date.day,
-            'B7': company.labor_bureau,
+            'B7': labor_bureau_short(company.labor_bureau),
             'AG9': p1, 'AL9': p2,
             'AF10': company.address,
             'AF12': company.company_name,
@@ -287,7 +318,8 @@ class ExcelWriterR80302(ExcelWriter):
             'AF21': spp1, 'AM21': spp2, 'AT21': spp3,
             'K26': company.main_business,
             'K27': company.employee_count,
-            'K30': company.company_name,
+            # 雇用保険適用事業所名（offices[0].name 優先）
+            'K30': get_insurance_office_name(company),
             'AN30': i1, 'AS30': i2, 'AZ30': i3,
             'R31': company.contact_name,
             'AM31': company.contact_department,
@@ -311,8 +343,8 @@ class ExcelWriterR80302(ExcelWriter):
     def write_経費助成内訳(self, company: CompanyInfo, group: CurriculumGroup) -> str:
         """02_経費助成の内訳(様式第6-2号) - R80302版（セル位置は現行と同じ）"""
         values = {
-            'J7': company.labor_bureau,
-            'AE7': company.company_name,
+            'J7': labor_bureau_short(company.labor_bureau),
+            'AE7': get_insurance_office_name(company),
         }
         fname = f"02_経費助成の内訳_{group.curriculum_name}_{company.company_name}.xlsx"
         return self._patch(
@@ -321,11 +353,22 @@ class ExcelWriterR80302(ExcelWriter):
         )
 
     def write_賃金助成内訳(self, company: CompanyInfo, group: CurriculumGroup) -> str:
-        """03_賃金助成の内訳(様式第5号) - R80302版（セル位置は現行と同じ）"""
+        """03_賃金助成の内訳(様式第5号) - R80302版
+
+        修正点（PPT指摘事項）:
+          - P7 (受付番号エリア) labor_bureau 書き込み削除
+          - BA7 = 雇用保険適用事業所名（offices[0].name 優先）
+          - 行22以降の支給対象労働者一覧にデータを追加
+        """
         values = {
-            'P7': company.labor_bureau,
-            'BA7': company.company_name,
+            'BA7': get_insurance_office_name(company),
         }
+        start_row = 22
+        for idx, p in enumerate(group.participants):
+            r = start_row + idx
+            values[f'B{r}'] = p.name
+            values[f'K{r}'] = getattr(p, 'furigana', '')
+            values[f'T{r}'] = (p.insurance_number or "").replace('−', '-').replace('ー', '-')
         fname = f"03_賃金助成の内訳_{group.curriculum_name}_{company.company_name}.xlsx"
         return self._patch(
             "支給申請/03_賃金助成の内訳(様式第5号)_研修名_企業名(インタラクティブのみ).xlsx",
@@ -359,7 +402,7 @@ class ExcelWriterR80302(ExcelWriter):
         """05_事業所確認票(様式第13号) - R80302版（セル位置は現行と同じ）"""
         values = {
             'N3': submit_date.year, 'R3': submit_date.month, 'T3': submit_date.day,
-            'B4': company.labor_bureau,
+            'B4': labor_bureau_short(company.labor_bureau),
             'L8': company.company_name,
             'L10': company.address,
         }
@@ -384,6 +427,7 @@ class ExcelWriterR80302(ExcelWriter):
 
         subsidiary = offices[1:] if len(offices) > 1 else []
         office_rows = [21, 23, 25, 27, 29, 31, 33, 35, 37, 39]
+        total_employee = head_emp or 0
         for idx, office in enumerate(subsidiary[:10]):
             r = office_rows[idx]
             s1, s2, s3 = split_insurance_number(office.insurance_number)
@@ -393,9 +437,13 @@ class ExcelWriterR80302(ExcelWriter):
             values[f'P{r}'] = s3
             if office.employee_count:
                 values[f'Q{r}'] = office.employee_count
+                total_employee += office.employee_count
 
         total_offices = max(1, len(offices)) if offices else 1
         values['L12'] = total_offices
+
+        # 常時雇用労働者数の合計 (Q42)
+        values['Q42'] = company.employee_count if company.employee_count else total_employee
 
         fname = f"05_事業所確認票_{group.curriculum_name}_{company.company_name}.xlsx"
         return self._patch(
