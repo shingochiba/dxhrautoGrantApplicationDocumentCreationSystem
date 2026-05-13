@@ -135,6 +135,70 @@ def _find_employee_count_by_label(ws, max_row: int = 30) -> int:
     return 0
 
 
+def _find_value_right_of_keyword(ws, keywords, max_row: int = 40):
+    """シート内でラベルセルを探し、その行の右側にある最初の非空セルの値を返す。
+
+    キーワードを含むラベルを発見したら、その行の右側に「例)」「サンプル」が
+    入っているセルはスキップして実際の値を返す。
+    """
+    for row in ws.iter_rows(min_row=1, max_row=max_row):
+        for cell in row:
+            if cell.value is None:
+                continue
+            label = str(cell.value).strip()
+            if not any(kw in label for kw in keywords):
+                continue
+            for col_offset in range(1, 30):
+                target = ws.cell(row=cell.row, column=cell.column + col_offset)
+                if target.value is None:
+                    continue
+                t = str(target.value).strip()
+                # 「例)」「サンプル」「人」のみ のセルはスキップ
+                if t in ('', '人', '名'):
+                    continue
+                if t.startswith('例') or t.startswith('サンプル'):
+                    continue
+                return target.value
+    return None
+
+
+def _extract_industry_code(ws) -> str:
+    """①企業基本情報シートから産業分類コード（2桁数字）を抽出"""
+    val = _find_value_right_of_keyword(ws, ('産業分類',))
+    if val is None:
+        return ""
+    if isinstance(val, (int, float)):
+        n = int(val)
+        if 0 <= n <= 99:
+            return f"{n:02d}"
+        return ""
+    s = str(val).strip()
+    # 「80」「80番」「80(娯楽業)」のような表記から数字部分を抽出
+    import re as _re
+    m = _re.match(r'(\d{1,2})', s)
+    if m:
+        return m.group(1).zfill(2)
+    return ""
+
+
+def _extract_employee_count_total(ws) -> int:
+    """②事業所情報シートから「申請事業所と申請事業所以外の常時雇用する労働者数の合計」を取得"""
+    # まずユーザー指定のラベル文言で探す
+    for keywords in (
+        ('申請事業所と申請事業所以外',),
+        ('労働者数の合計',),
+        ('常時雇用する労働者数の合計',),
+        ('常時雇用',),
+        ('従業員数',),
+    ):
+        val = _find_value_right_of_keyword(ws, keywords)
+        if val is not None:
+            emp = _parse_int(val)
+            if emp > 0:
+                return emp
+    return 0
+
+
 def _find_sheet(wb, *keywords) -> Optional[str]:
     """シート名に指定キーワードが含まれる最初のシート名を返す"""
     for sn in wb.sheetnames:
@@ -227,10 +291,22 @@ def import_company_from_excel(file_bytes: bytes) -> Tuple[Optional[CompanyInfo],
     postal_code, address = _extract_postal_address(_get(ws, 'C5'))
     head_phone = _get(ws, 'C6')
     corporate_number = _get(ws, 'C8').replace('-', '').replace('−', '').replace('ー', '').strip()
-    employee_count_main = _parse_int(ws['C9'].value)
+    # 注: C9 は旧来「従業員数」だったが、新シートでは「産業分類コード」になっているため
+    # ここでの直接読み取りは行わず、ラベル検索ベースで取得する。
     insurance_office_number = _get(ws, 'C10')
     contact_name = _get(ws, 'C14')
     contact_phone = _get(ws, 'C15')
+
+    # 産業分類コード（2桁）を取得し、対応する分類名を main_business に設定
+    industry_code = _extract_industry_code(ws)
+    main_business_from_code = ""
+    if industry_code:
+        try:
+            from . import storage as _storage
+            _industries = _storage.load_industry_codes()
+            main_business_from_code = _industries.get(industry_code, "")
+        except Exception:
+            pass
 
     # 雇用保険適用事業所番号の形式を整える (4桁-6桁-1桁)
     if insurance_office_number:
@@ -241,25 +317,23 @@ def import_company_from_excel(file_bytes: bytes) -> Tuple[Optional[CompanyInfo],
         elif '-' in ion:
             insurance_office_number = ion
 
-    # ②事業所情報シートから労働者数合計を取得
-    employee_count_total = 0
+    # ②事業所情報シートから「申請事業所と申請事業所以外の常時雇用する労働者数の合計」を取得
+    employee_count = 0
     office_sheet_name = _find_sheet(wb, '事業所情報', '②')
     if office_sheet_name:
         ws2 = wb[office_sheet_name]
-        # G22 or C22 いずれかに合計があるはず
-        employee_count_total = _parse_int(ws2['G22'].value) or _parse_int(ws2['C22'].value)
-        # それでも取れない場合はラベル検索
-        if employee_count_total == 0:
-            employee_count_total = _find_employee_count_by_label(ws2)
+        # ラベル検索を優先（「申請事業所と申請事業所以外」→「労働者数の合計」→「常時雇用」）
+        employee_count = _extract_employee_count_total(ws2)
+        # それでも取れない場合は旧来の固定セル G22/C22 を試す
+        if employee_count == 0:
+            employee_count = _parse_int(ws2['G22'].value) or _parse_int(ws2['C22'].value)
 
-    # ①シートでも C9 で取れなければラベル検索を試みる
-    if employee_count_main == 0:
-        employee_count_main = _find_employee_count_by_label(ws)
-
-    employee_count = employee_count_total if employee_count_total > 0 else employee_count_main
     if employee_count == 0:
         employee_count = 1  # dataclassのデフォルトとの互換性
-        import_warnings.append("従業員数が取得できませんでした。手動で入力してください。")
+        import_warnings.append(
+            "従業員数が取得できませんでした。"
+            "②事業所情報シートの「申請事業所と申請事業所以外の【常時雇用する労働者数】の合計」欄をご確認ください。"
+        )
 
     phone_number = contact_phone or head_phone
 
@@ -284,7 +358,7 @@ def import_company_from_excel(file_bytes: bytes) -> Tuple[Optional[CompanyInfo],
         contact_department="",
         contact_email="",
         phone_number=phone_number,
-        main_business="",  # このシートには含まれない（産業分類番号のみ）
+        main_business=main_business_from_code,
         employee_count=employee_count,
         labor_bureau=labor_bureau,
         representative_name=rep_name,
@@ -304,6 +378,15 @@ def import_company_from_excel(file_bytes: bytes) -> Tuple[Optional[CompanyInfo],
         import_warnings.append(f"管轄労働局を住所から自動判定しました：{labor_bureau}")
     else:
         import_warnings.append("「管轄労働局」は住所から自動判定できなかったため、手動で選択してください。")
-    import_warnings.append("「主たる事業」はシートに含まれないため、手動で入力してください。")
+    if industry_code and main_business_from_code:
+        import_warnings.append(
+            f"産業分類コード `{industry_code}` から「{main_business_from_code}」を主たる事業に自動反映しました。"
+        )
+    elif industry_code and not main_business_from_code:
+        import_warnings.append(
+            f"産業分類コード `{industry_code}` を読み取りましたが、対応する分類名が見つかりませんでした。"
+        )
+    else:
+        import_warnings.append("「主たる事業」（産業分類コード）はシートから取得できませんでした。手動で入力してください。")
 
     return (company, import_warnings)
