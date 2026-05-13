@@ -126,29 +126,31 @@ def render_company_form() -> Optional[CompanyInfo]:
             # ファイルが取り除かれたら処理済みフラグをリセット（同じファイル再アップロードに備える）
             st.session_state.pop('_last_imported_file_id', None)
 
-    # === 産業分類コードから「主たる事業」を入力 ===
-    # st.form の外に置く（form 内のウィジェット変更では rerun されないため）
-    with st.expander("📊 産業分類コードから「主たる事業」を入力（任意）", expanded=False):
+    # === 産業分類コード参照（コード→分類名の確認用、表示のみ）===
+    # 注: ここに「反映ボタン」を置くと rerun でフォーム入力中の値（常時雇用労働者数等）が
+    # リセットされてしまうため、自動反映はフォーム内の「産業分類コード」欄で行う。
+    from . import storage as _storage
+    _industry_map = _storage.load_industry_codes()
+    with st.expander("📊 産業分類コードの参照（任意）", expanded=False):
         st.caption(
-            "日本標準産業分類の中分類（2桁）コードを入力すると、対応する事業名を主たる事業欄に反映できます。"
+            "日本標準産業分類の中分類（2桁）コード→分類名 の参照用です。"
             "[出典: ハローワークインターネットサービス](https://www.hellowork.mhlw.go.jp/info/industry_list02.html)"
         )
-        from . import storage as _storage
-        _industry_map = _storage.load_industry_codes()
         _code = st.text_input(
-            "中分類コード（2桁）",
+            "中分類コード（2桁）を入力して確認",
             key="_industry_code",
             max_chars=2,
-            placeholder="例: 39（情報サービス業）",
+            placeholder="例: 39",
         )
         if _code:
             if len(_code) == 2 and _code.isdigit():
                 _name = _industry_map.get(_code)
                 if _name:
                     st.success(f"✅ **{_code}: {_name}**")
-                    if st.button("→ 主たる事業に反映", key="_apply_industry", type="primary"):
-                        st.session_state['_main_business'] = _name
-                        st.rerun()
+                    st.info(
+                        "💡 この分類名を「主たる事業」に反映するには、下のフォーム内の"
+                        f"「産業分類コード」欄に `{_code}` を入力し、「保存して次へ」を押してください。"
+                    )
                 else:
                     st.warning(f"コード `{_code}` は産業分類に存在しません")
             else:
@@ -224,6 +226,17 @@ def render_company_form() -> Optional[CompanyInfo]:
                 key="_main_business",
                 help="例：情報サービス業、製造業など",
             )
+            industry_code_input = st.text_input(
+                "産業分類コード（2桁・任意）",
+                key="_industry_code_form",
+                max_chars=2,
+                placeholder="例: 39",
+                help=(
+                    "中分類2桁コードを入力すると、保存時に「主たる事業」へ"
+                    "対応する分類名を自動的に反映します。"
+                    "上の参照エクスパンダーでコードを確認できます。"
+                ),
+            )
             representative_title = st.text_input(
                 "代表者役職",
                 key="_representative_title",
@@ -275,6 +288,16 @@ def render_company_form() -> Optional[CompanyInfo]:
         for error in errors:
             st.error(error)
         return None
+
+    # 産業分類コードが入力されていれば、主たる事業を分類名で上書き
+    _code_trim = (industry_code_input or "").strip()
+    if _code_trim and len(_code_trim) == 2 and _code_trim.isdigit():
+        _mapped_name = _industry_map.get(_code_trim)
+        if _mapped_name:
+            main_business = _mapped_name
+            st.info(f"📊 産業分類コード `{_code_trim}` → 「{_mapped_name}」を主たる事業に反映しました。")
+        else:
+            st.warning(f"産業分類コード `{_code_trim}` は無効でした。入力された主たる事業をそのまま使用します。")
 
     # 住所の都道府県から労働局を自動判定（自動入力ロジック）
     # 住所から都道府県が明確に読み取れる場合は、ドロップダウンの値より住所優先
