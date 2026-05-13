@@ -73,6 +73,31 @@ def get_insurance_office_name(company) -> str:
     return company.company_name
 
 
+def get_3_1_employment_checkboxes(participants, max_participants: int = 80) -> Dict[int, bool]:
+    """様式3-1号（対象労働者一覧）の雇用形態チェックボックス状態を生成
+
+    現行・R80302 書式共通のマッピング規則:
+      参加者 idx (0-indexed) → 行 (13 + idx*2)
+      - 正規雇用労働者等 チェックボックス: ctrlProp(1 + idx*2)
+      - 有期契約労働者等 チェックボックス: ctrlProp(2 + idx*2)
+
+    各参加者の employment_type に「正規」を含む → 正規側 True
+                                    「有期」を含む → 有期側 True
+    """
+    states: Dict[int, bool] = {}
+    for idx, p in enumerate(participants):
+        if idx >= max_participants:
+            break
+        emp = getattr(p, 'employment_type', '') or ''
+        regular_ctrl = 1 + idx * 2  # ctrlProp1, 3, 5, ...
+        fixed_ctrl = 2 + idx * 2    # ctrlProp2, 4, 6, ...
+        is_regular = '正規' in emp
+        is_fixed = '有期' in emp
+        states[regular_ctrl] = is_regular
+        states[fixed_ctrl] = is_fixed
+    return states
+
+
 def get_training_method_checkboxes(subsidy_course: str) -> Dict[int, bool]:
     """助成コース → 様式1-1号 「12 訓練の実施方法」のチェックボックス状態
 
@@ -247,6 +272,7 @@ class ExcelWriter:
         列構成: A=No(pre-filled), B=氏名, C=被保険者番号4桁, F=6桁, I=1桁,
                J=雇用形態(チェックボックス), L=採用予定日, S=対象労働者属性
         受講者1件につき2行使用 (行13-14 が1件目、行15-16 が2件目...)
+        雇用形態のチェックボックスは employment_type から自動チェック。
         """
         values = {
             'C8': company.company_name,
@@ -264,10 +290,16 @@ class ExcelWriter:
                 values[f'C{r}'] = parts[0]
                 values[f'F{r}'] = parts[1]
                 values[f'I{r}'] = parts[2]
-            # 雇用形態・採用予定日・属性はチェックボックス＋個別情報のため手動記入
+
+        # 雇用形態チェックボックス（正規雇用/有期契約）の状態を生成
+        checkbox_states = get_3_1_employment_checkboxes(group.participants)
 
         fname = f"03_対象者一覧(3-1)_{company.company_name}_{group.curriculum_name}.xlsx"
-        return self._patch("計画申請/03_対象者一覧(様式第3-1号).xlsx", fname, values)
+        return self._patch(
+            "計画申請/03_対象者一覧(様式第3-1号).xlsx",
+            fname, values,
+            checkbox_states=checkbox_states,
+        )
 
     def write_対象者一覧_3_2(self, company: CompanyInfo, group: CurriculumGroup) -> str:
         """03_対象者一覧(様式第3-2号) 定額制用

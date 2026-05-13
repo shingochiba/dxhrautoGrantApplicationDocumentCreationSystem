@@ -17,6 +17,7 @@ from .excel_writer import (
     split_postal, split_phone, split_insurance_number,
     labor_bureau_short, get_insurance_office_name,
     get_training_method_checkboxes,
+    get_3_1_employment_checkboxes,
 )
 
 
@@ -148,7 +149,9 @@ class ExcelWriterR80302(ExcelWriter):
         )
 
     def write_対象者一覧_3_1(self, company: CompanyInfo, group: CurriculumGroup) -> str:
-        """03_対象労働者一覧(様式第3-1号) - R80302版（セル位置は現行と同じ）"""
+        """03_対象労働者一覧(様式第3-1号) - R80302版（セル位置は現行と同じ）
+        雇用形態のチェックボックスを employment_type から自動チェック。
+        """
         values = {
             'C8': company.company_name,
             'C9': group.curriculum_name,
@@ -164,10 +167,14 @@ class ExcelWriterR80302(ExcelWriter):
                 values[f'F{r}'] = parts[1]
                 values[f'I{r}'] = parts[2]
 
+        # 雇用形態チェックボックス（正規雇用/有期契約）の状態を生成
+        checkbox_states = get_3_1_employment_checkboxes(group.participants)
+
         fname = f"03_対象労働者一覧(3-1)_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch(
             "計画申請/03_人材開発支援助成金（事業展開等リスキリング支援コース）対象労働者一覧(様式第3-1号).xlsx",
-            fname, values
+            fname, values,
+            checkbox_states=checkbox_states,
         )
 
     def write_対象者一覧_3_2(self, company: CompanyInfo, group: CurriculumGroup) -> str:
