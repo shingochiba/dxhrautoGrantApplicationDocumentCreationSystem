@@ -256,6 +256,19 @@ def render_company_form() -> Optional[CompanyInfo]:
     if not submit_clicked:
         return None
 
+    # === バリデーション前の自動補完 ===
+    # 産業分類コードが入力されていれば、主たる事業を分類名で上書き
+    # （バリデーションより先に行うことで、コード入力時に主たる事業が空でもエラーにならない）
+    _code_trim = (industry_code_input or "").strip()
+    _industry_applied = False
+    if _code_trim and len(_code_trim) == 2 and _code_trim.isdigit():
+        _mapped_name = _industry_map.get(_code_trim)
+        if _mapped_name:
+            main_business = _mapped_name
+            _industry_applied = True
+        else:
+            st.warning(f"⚠️ 産業分類コード `{_code_trim}` は存在しません。入力された主たる事業を使用します。")
+
     # バリデーション
     errors = []
     if not company_name:
@@ -277,22 +290,16 @@ def render_company_form() -> Optional[CompanyInfo]:
     if not phone_number:
         errors.append("電話番号は必須です")
     if not main_business:
-        errors.append("主たる事業は必須です")
+        errors.append("主たる事業は必須です（または産業分類コードを入力してください）")
 
     if errors:
         for error in errors:
             st.error(error)
         return None
 
-    # 産業分類コードが入力されていれば、主たる事業を分類名で上書き
-    _code_trim = (industry_code_input or "").strip()
-    if _code_trim and len(_code_trim) == 2 and _code_trim.isdigit():
-        _mapped_name = _industry_map.get(_code_trim)
-        if _mapped_name:
-            main_business = _mapped_name
-            st.info(f"📊 産業分類コード `{_code_trim}` → 「{_mapped_name}」を主たる事業に反映しました。")
-        else:
-            st.warning(f"産業分類コード `{_code_trim}` は無効でした。入力された主たる事業をそのまま使用します。")
+    # 自動補完の通知（バリデーション通過後に表示）
+    if _industry_applied:
+        st.info(f"📊 産業分類コード `{_code_trim}` → 「{main_business}」を主たる事業に反映しました。")
 
     # 住所の都道府県から労働局を自動判定（自動入力ロジック）
     # 住所から都道府県が明確に読み取れる場合は、ドロップダウンの値より住所優先
