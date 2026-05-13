@@ -474,6 +474,48 @@ def render_step5():
             st.rerun()
 
 
+def render_sidebar_toggle_button():
+    """サイドバー表示/非表示を切り替えるボタンを描画。
+    Streamlit ネイティブのトグルボタンを JavaScript で押すことで切り替える。
+    """
+    import streamlit.components.v1 as components
+
+    col_btn, col_rest = st.columns([1, 9])
+    with col_btn:
+        clicked = st.button(
+            "☰",
+            key="_sidebar_toggle_global",
+            help="サイドバーの表示・非表示を切り替えます"
+        )
+    if clicked:
+        # Streamlit のサイドバーのトグルボタンを JS で押す
+        # data-testid はバージョンごとに違うため、複数候補を試す
+        components.html(
+            """
+            <script>
+            (function() {
+                const doc = window.parent.document;
+                const selectors = [
+                    '[data-testid="stSidebarCollapseButton"] button',
+                    '[data-testid="stSidebarCollapseButton"]',
+                    '[data-testid="collapsedControl"] button',
+                    '[data-testid="collapsedControl"]',
+                    '[data-testid="stSidebarCollapsedControl"] button',
+                    'button[aria-label="Close sidebar"]',
+                    'button[aria-label="Open sidebar"]',
+                    'button[kind="header"]',
+                ];
+                for (const sel of selectors) {
+                    const el = doc.querySelector(sel);
+                    if (el) { el.click(); return; }
+                }
+            })();
+            </script>
+            """,
+            height=0,
+        )
+
+
 def main():
     """メイン関数"""
     # ログインゲート: 認証されるまで以降を表示しない
@@ -484,6 +526,7 @@ def main():
     render_sidebar()
 
     # メインコンテンツ
+    render_sidebar_toggle_button()
     st.title("人材開発支援助成金 書類自動作成ツール")
     st.markdown("会社情報と受講者一覧を入力して、計画申請・支給申請の書類を自動生成します。")
     st.markdown("---")
