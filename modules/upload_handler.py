@@ -196,9 +196,21 @@ def validate_participants(df: pd.DataFrame) -> tuple[List[str], List[Participant
             tuition = 0
 
         # 助成コースチェック
+        # 新仕様: e-ラーニング / インタラクティブ（通学制）/ インタラクティブ（同時双方向）/ 定額制
+        # 旧仕様: リスキリング / 定額制 も後方互換で許容
         subsidy = _safe_str(row.get('助成コース', ''))
-        if subsidy not in ['リスキリング', '定額制']:
-            errors.append(f"行{row_num}: 助成コースは「リスキリング」または「定額制」を入力してください")
+        _valid_subsidies = [
+            'e-ラーニング', 'eラーニング',
+            'インタラクティブ（通学制）', 'インタラクティブ(通学制)',
+            'インタラクティブ（同時双方向）', 'インタラクティブ(同時双方向)',
+            '定額制',
+            'リスキリング',  # 旧仕様（後方互換）
+        ]
+        if subsidy not in _valid_subsidies:
+            errors.append(
+                f"行{row_num}: 助成コースは「e-ラーニング」「インタラクティブ（通学制）」"
+                "「インタラクティブ（同時双方向）」「定額制」のいずれかを入力してください"
+            )
 
         # 拡張フィールド（オプション）
         gender = _normalize_gender(row.get('性別'))

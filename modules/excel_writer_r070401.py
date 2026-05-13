@@ -22,6 +22,7 @@ from .excel_writer import (
     ExcelWriter, is_teigaku_course,
     split_postal, split_phone, split_insurance_number,
     labor_bureau_short, get_insurance_office_name,
+    get_training_method_checkboxes,
 )
 
 
@@ -136,10 +137,14 @@ class ExcelWriterR070401(ExcelWriter):
             values['R54'] = ""
             values['Y54'] = ""
 
+        # 12 訓練の実施方法のチェックボックスを助成コースに応じて設定
+        checkbox_states = get_training_method_checkboxes(group.subsidy_course)
+
         fname = f"01_職業訓練実施計画届_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch(
             "計画申請/01_職業訓練実施計画届(様式第1-1号)_企業名.xlsx",
-            fname, values
+            fname, values,
+            checkbox_states=checkbox_states,
         )
 
     def write_事業展開等実施計画(self, company: CompanyInfo, group: CurriculumGroup,

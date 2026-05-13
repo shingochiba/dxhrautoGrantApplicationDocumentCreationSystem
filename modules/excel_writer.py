@@ -73,6 +73,34 @@ def get_insurance_office_name(company) -> str:
     return company.company_name
 
 
+def get_training_method_checkboxes(subsidy_course: str) -> Dict[int, bool]:
+    """助成コース → 様式1-1号 「12 訓練の実施方法」のチェックボックス状態
+
+    対応するチェックボックス（全書式共通）:
+      ctrlProp6 = ①通学制
+      ctrlProp7 = ②同時双方向型の通信訓練
+      ctrlProp8 = ③eラーニング
+      ctrlProp9 = ④通信制
+
+    マッピング:
+      インタラクティブ（通学制）   → ①通学制
+      インタラクティブ（同時双方向）→ ②同時双方向
+      e-ラーニング                → ③eラーニング
+      定額制                      → ③eラーニング (定額制サービスは通常 e-Learning)
+    """
+    s = (subsidy_course or "").strip()
+    states = {6: False, 7: False, 8: False, 9: False}
+    if 'インタラクティブ' in s and '通学' in s:
+        states[6] = True
+    elif 'インタラクティブ' in s and '双方向' in s:
+        states[7] = True
+    elif 'eラーニング' in s or 'e-ラーニング' in s or 'eラー' in s:
+        states[8] = True
+    elif '定額制' in s:
+        states[8] = True
+    return states
+
+
 class ExcelWriter:
     """Excelテンプレートへのデータ書き込みクラス (ZIPレベル操作)"""
 
@@ -88,11 +116,16 @@ class ExcelWriter:
         return p
 
     def _patch(self, template_rel: str, output_filename: str,
-               cell_values: Dict[str, Any]) -> str:
-        """指定テンプレートをコピーし、cell_values を書き込んで出力"""
+               cell_values: Dict[str, Any],
+               checkbox_states: Dict[int, bool] | None = None) -> str:
+        """指定テンプレートをコピーし、cell_values を書き込んで出力
+
+        Args:
+            checkbox_states: ctrlProp番号 → チェック状態 の辞書
+        """
         tpl = self._template(template_rel)
         out = self.output_dir / output_filename
-        return patch_xlsx(tpl, out, cell_values)
+        return patch_xlsx(tpl, out, cell_values, checkbox_states=checkbox_states)
 
     # ==================================================================
     # 計画申請書類
@@ -185,8 +218,14 @@ class ExcelWriter:
             values['R55'] = ""
             values['Y55'] = ""
 
+        # 12 訓練の実施方法のチェックボックスを助成コースに応じて設定
+        checkbox_states = get_training_method_checkboxes(group.subsidy_course)
+
         fname = f"01_職業訓練実施計画届_{company.company_name}_{group.curriculum_name}.xlsx"
-        return self._patch("計画申請/01_職業訓練実施計画届(様式第1-1号).xlsx", fname, values)
+        return self._patch(
+            "計画申請/01_職業訓練実施計画届(様式第1-1号).xlsx", fname, values,
+            checkbox_states=checkbox_states,
+        )
 
     def write_事業展開等実施計画(self, company: CompanyInfo, group: CurriculumGroup,
                                   submit_date: datetime) -> str:

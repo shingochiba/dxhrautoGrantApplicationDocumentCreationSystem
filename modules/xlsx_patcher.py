@@ -134,10 +134,33 @@ def _resolve_merged_cell_target(sheet_xml: str, ref: str) -> str:
     return ref
 
 
+def _set_checkbox_state(ctrl_xml: str, checked: bool) -> str:
+    """ctrlPropN.xml の checked 属性を設定する。
+
+    - checked=True: `checked="Checked"` 属性を付与（既にあれば変更なし）
+    - checked=False: `checked="Checked"` 属性を除去
+    """
+    if checked:
+        # checked属性がすでにあるか確認
+        if 'checked="Checked"' in ctrl_xml:
+            return ctrl_xml
+        # objectType="CheckBox" の直後に挿入
+        return re.sub(
+            r'(objectType="CheckBox")',
+            r'\1 checked="Checked"',
+            ctrl_xml,
+            count=1,
+        )
+    else:
+        # checked属性を除去
+        return re.sub(r'\s*checked="Checked"', '', ctrl_xml)
+
+
 def patch_xlsx(template_path: str | Path,
                output_path: str | Path,
                cell_values: Dict[str, Any],
-               sheet_file: str = 'xl/worksheets/sheet1.xml') -> str:
+               sheet_file: str = 'xl/worksheets/sheet1.xml',
+               checkbox_states: Dict[int, bool] | None = None) -> str:
     """
     テンプレートxlsxをコピーし、指定セル値のみをXMLレベルで書き換える。
 
@@ -146,6 +169,8 @@ def patch_xlsx(template_path: str | Path,
         output_path: 出力先パス
         cell_values: {'A1': 'text', 'B2': 123, ...} 形式の辞書
         sheet_file: 編集対象シートのXMLパス
+        checkbox_states: {6: True, 7: False, ...} 形式の辞書（ctrlProp番号→チェック状態）
+                         指定された ctrlPropN.xml のチェック状態を変更する
 
     Returns:
         出力ファイルパス
@@ -191,12 +216,30 @@ def patch_xlsx(template_path: str | Path,
     if has_bom:
         new_bytes = b'\xef\xbb\xbf' + new_bytes
 
+    # チェックボックスの状態を更新（ctrlPropN.xml を書き換え）
+    modified_ctrlprops: Dict[str, bytes] = {}
+    if checkbox_states:
+        for ctrl_num, want_checked in checkbox_states.items():
+            ctrl_filename = f'xl/ctrlProps/ctrlProp{ctrl_num}.xml'
+            if ctrl_filename in other_data:
+                ctrl_bytes = other_data[ctrl_filename]
+                # BOM 判定
+                ctrl_has_bom = ctrl_bytes[:3] == b'\xef\xbb\xbf'
+                ctrl_xml = ctrl_bytes.decode('utf-8-sig' if ctrl_has_bom else 'utf-8')
+                ctrl_xml_new = _set_checkbox_state(ctrl_xml, want_checked)
+                ctrl_bytes_new = ctrl_xml_new.encode('utf-8')
+                if ctrl_has_bom:
+                    ctrl_bytes_new = b'\xef\xbb\xbf' + ctrl_bytes_new
+                modified_ctrlprops[ctrl_filename] = ctrl_bytes_new
+
     # ZIPを再構築（全ファイルを順番に再書き込み）
     temp_path = str(output_path) + '.tmp'
     with zipfile.ZipFile(temp_path, 'w', zipfile.ZIP_DEFLATED) as zout:
         for info in all_names:
             if info.filename == sheet_file:
                 zout.writestr(info.filename, new_bytes)
+            elif info.filename in modified_ctrlprops:
+                zout.writestr(info.filename, modified_ctrlprops[info.filename])
             else:
                 zout.writestr(info.filename, other_data[info.filename])
 
