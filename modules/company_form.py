@@ -126,35 +126,30 @@ def render_company_form() -> Optional[CompanyInfo]:
             # ファイルが取り除かれたら処理済みフラグをリセット（同じファイル再アップロードに備える）
             st.session_state.pop('_last_imported_file_id', None)
 
-    # === 産業分類コード参照（コード→分類名の確認用、表示のみ）===
-    # 注: ここに「反映ボタン」を置くと rerun でフォーム入力中の値（常時雇用労働者数等）が
-    # リセットされてしまうため、自動反映はフォーム内の「産業分類コード」欄で行う。
+    # === 産業分類コード一覧（参照用・静的表示）===
+    # 注: ここに text_input 等の rerun を起こすウィジェットを置くと
+    # フォーム内の常時雇用労働者数（number_input）等の入力中の値がリセットされる。
+    # そのため一覧は st.dataframe（rerun を起こさない静的表示）で提供する。
+    # 自動反映はフォーム内の「産業分類コード」欄で行う。
     from . import storage as _storage
     _industry_map = _storage.load_industry_codes()
-    with st.expander("📊 産業分類コードの参照（任意）", expanded=False):
+    with st.expander("📊 産業分類コード一覧（参照・99件）", expanded=False):
         st.caption(
-            "日本標準産業分類の中分類（2桁）コード→分類名 の参照用です。"
+            "中分類2桁コード一覧です。下のフォーム内の「産業分類コード」欄にコードを"
+            "入力すると、保存時に「主たる事業」へ自動反映されます。"
             "[出典: ハローワークインターネットサービス](https://www.hellowork.mhlw.go.jp/info/industry_list02.html)"
         )
-        _code = st.text_input(
-            "中分類コード（2桁）を入力して確認",
-            key="_industry_code",
-            max_chars=2,
-            placeholder="例: 39",
-        )
-        if _code:
-            if len(_code) == 2 and _code.isdigit():
-                _name = _industry_map.get(_code)
-                if _name:
-                    st.success(f"✅ **{_code}: {_name}**")
-                    st.info(
-                        "💡 この分類名を「主たる事業」に反映するには、下のフォーム内の"
-                        f"「産業分類コード」欄に `{_code}` を入力し、「保存して次へ」を押してください。"
-                    )
-                else:
-                    st.warning(f"コード `{_code}` は産業分類に存在しません")
-            else:
-                st.info("2桁の数字を入力してください")
+        if _industry_map:
+            import pandas as _pd
+            _df_industry = _pd.DataFrame(
+                [{"コード": k, "分類名": v} for k, v in _industry_map.items()]
+            )
+            st.dataframe(
+                _df_industry,
+                use_container_width=True,
+                hide_index=True,
+                height=300,
+            )
 
     # デフォルト値を session_state に初期化（widget 作成前、かつ初回のみ）
     # Streamlit の仕様: value= と key= を同時指定かつ session_state に値があると警告 + 誤動作
