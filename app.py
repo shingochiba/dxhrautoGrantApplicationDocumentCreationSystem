@@ -476,43 +476,50 @@ def render_step5():
 
 def render_sidebar_toggle_button():
     """サイドバー表示/非表示を切り替えるボタンを描画。
-    Streamlit ネイティブのトグルボタンを JavaScript で押すことで切り替える。
+    session_state でトグル状態を管理し、CSS で直接 display を切り替える。
+    JS クリック方式より確実。
     """
-    import streamlit.components.v1 as components
+    if '_sidebar_hidden' not in st.session_state:
+        st.session_state['_sidebar_hidden'] = False
 
-    col_btn, col_rest = st.columns([1, 9])
+    col_btn, _ = st.columns([1, 9])
     with col_btn:
-        clicked = st.button(
-            "☰",
+        hidden_now = st.session_state['_sidebar_hidden']
+        label = "▶ サイドバー表示" if hidden_now else "☰ サイドバー非表示"
+        if st.button(
+            label,
             key="_sidebar_toggle_global",
-            help="サイドバーの表示・非表示を切り替えます"
-        )
-    if clicked:
-        # Streamlit のサイドバーのトグルボタンを JS で押す
-        # data-testid はバージョンごとに違うため、複数候補を試す
-        components.html(
+            help="サイドバーの表示・非表示を切り替えます",
+        ):
+            st.session_state['_sidebar_hidden'] = not hidden_now
+            st.rerun()
+
+    # 非表示状態の場合は CSS でサイドバーを完全に隠す
+    if st.session_state.get('_sidebar_hidden'):
+        st.markdown(
             """
-            <script>
-            (function() {
-                const doc = window.parent.document;
-                const selectors = [
-                    '[data-testid="stSidebarCollapseButton"] button',
-                    '[data-testid="stSidebarCollapseButton"]',
-                    '[data-testid="collapsedControl"] button',
-                    '[data-testid="collapsedControl"]',
-                    '[data-testid="stSidebarCollapsedControl"] button',
-                    'button[aria-label="Close sidebar"]',
-                    'button[aria-label="Open sidebar"]',
-                    'button[kind="header"]',
-                ];
-                for (const sel of selectors) {
-                    const el = doc.querySelector(sel);
-                    if (el) { el.click(); return; }
-                }
-            })();
-            </script>
+            <style>
+            /* サイドバー本体を非表示 */
+            section[data-testid="stSidebar"] {
+                display: none !important;
+                width: 0 !important;
+                min-width: 0 !important;
+                max-width: 0 !important;
+            }
+            /* Streamlit が表示する「折りたたみ時の展開ボタン」も隠す（自前のボタンで管理するため） */
+            [data-testid="stSidebarCollapsedControl"],
+            [data-testid="collapsedControl"] {
+                display: none !important;
+            }
+            /* メインコンテンツのマージン調整 */
+            section[data-testid="stMain"] > div:first-child,
+            .main > .block-container {
+                padding-left: 1rem !important;
+                margin-left: 0 !important;
+            }
+            </style>
             """,
-            height=0,
+            unsafe_allow_html=True,
         )
 
 
