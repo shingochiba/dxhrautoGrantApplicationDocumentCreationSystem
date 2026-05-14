@@ -73,6 +73,19 @@ def get_insurance_office_name(company) -> str:
     return company.company_name
 
 
+def get_4_2_teigaku_checkboxes(subsidy_course: str) -> Dict[int, bool]:
+    """様式4-2号（支給申請書）の定額制契約途中解約禁止チェックボックス
+
+    対象: 「本申請の定額制サービスに係る契約について契約期間の終了前に途中解約しません。…」
+    対応する ctrlProp（3書式共通）:
+      ctrlProp14 = Check Box 20
+
+    定額制コースの場合のみチェックする。
+    """
+    teigaku = is_teigaku_course(subsidy_course)
+    return {14: teigaku}
+
+
 def get_3_1_employment_checkboxes(participants, max_participants: int = 80) -> Dict[int, bool]:
     """様式3-1号（対象労働者一覧）の雇用形態チェックボックス状態を生成
 
@@ -410,8 +423,14 @@ class ExcelWriter:
             for i, d in enumerate(digits[:13]):
                 values[f'{cols[i]}14'] = d
 
+        # 定額制の場合は契約途中解約禁止チェックボックスをチェック
+        checkbox_states = get_4_2_teigaku_checkboxes(group.subsidy_course)
+
         fname = f"01_支給申請書_{group.curriculum_name}_{company.company_name}.xlsx"
-        return self._patch("支給申請/01_支給申請書(様式第4-2号).xlsx", fname, values)
+        return self._patch(
+            "支給申請/01_支給申請書(様式第4-2号).xlsx", fname, values,
+            checkbox_states=checkbox_states,
+        )
 
     def write_経費助成内訳(self, company: CompanyInfo, group: CurriculumGroup) -> str:
         """02_経費助成の内訳(様式第6-2号)"""
