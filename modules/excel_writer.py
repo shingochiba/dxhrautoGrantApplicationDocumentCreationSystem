@@ -314,6 +314,48 @@ class ExcelWriter:
             checkbox_states=checkbox_states,
         )
 
+    def write_対象者一覧_電子申請(self, company: CompanyInfo, group: CurriculumGroup) -> str:
+        """03_対象者一覧(様式第3号)※電子申請のみ - 現行 R8.4 新規
+
+        構造:
+          - 雇用保険適用事業所の名称: B13 (B13:C13 merged)
+          - 雇用保険適用事業所番号: B15 (B15:C15 merged)
+          - データ行: row 21 から開始（row 20 は記入例）
+          - B: 番号(自動採番), C: 氏名, D: フリガナ, E: 雇用保険番号(11桁),
+            F: 性別, G: 生年月日, H: 取得日, I: 訓練コース名,
+            J: 雇用形態, K: 採用予定日, L: 属性, M: 所属事業主名
+        """
+        insurance_office_name = get_insurance_office_name(company)
+        # 保険番号を 11桁ハイフン区切り文字列で正規化
+        ins_raw = (company.insurance_office_number or "").replace('−', '-').replace('ー', '-').strip()
+
+        values = {
+            'B13': insurance_office_name,
+            'B15': ins_raw,
+        }
+        start_row = 21
+        for idx, p in enumerate(group.participants):
+            r = start_row + idx
+            # 番号は B21=1, B22=B21+1 ... と自動採番されるので idx==0 のみ書き込まなくてもOK
+            # ただし上書きの可能性に備えて 1人目に 1 を入れておく
+            if idx == 0:
+                values[f'B{r}'] = 1
+            values[f'C{r}'] = p.name
+            values[f'D{r}'] = getattr(p, 'furigana', '')
+            values[f'E{r}'] = (p.insurance_number or "").replace('−', '-').replace('ー', '-')
+            values[f'F{r}'] = getattr(p, 'gender', '')
+            # G: 生年月日, H: 取得日 → 未取得のため空
+            values[f'I{r}'] = group.curriculum_name
+            values[f'J{r}'] = p.employment_type
+            # K: 採用予定日, L: 属性 → 未取得のため空
+            values[f'M{r}'] = getattr(p, 'office_name', '')
+
+        fname = f"03_対象者一覧(電子申請)_{company.company_name}_{group.curriculum_name}.xlsx"
+        return self._patch(
+            "計画申請/03_対象者一覧(様式第3号)_企業名※電子申請のみ.xlsx",
+            fname, values,
+        )
+
     def write_対象者一覧_3_2(self, company: CompanyInfo, group: CurriculumGroup) -> str:
         """03_対象者一覧(様式第3-2号) 定額制用
 
@@ -440,6 +482,35 @@ class ExcelWriter:
         }
         fname = f"02_経費助成の内訳_{group.curriculum_name}_{company.company_name}.xlsx"
         return self._patch("支給申請/02_経費助成の内訳(様式第6-2号).xlsx", fname, values)
+
+    def write_経費助成内訳_定額制(self, company: CompanyInfo, group: CurriculumGroup) -> str:
+        """04_定額制サービスによる訓練に関する経費助成の内訳(様式第6-3号) - 現行 R8.4 新規
+
+        定額制ケース用。様式6-2号 の代わりに使用。
+        セル位置（R070401・R80302 と共通）:
+          - AG6: 訓練コース名
+          - J7: 支給対象労働者数
+          - M8/R8/W8: 訓練期間 始日（年/月/日）
+          - AF8/AK8/AP8: 訓練期間 終日（年/月/日）
+        """
+        values = {
+            'AG6': group.curriculum_name,
+            'J7': len(group.participants),
+        }
+        if group.start_date:
+            values['M8'] = group.start_date.year
+            values['R8'] = group.start_date.month
+            values['W8'] = group.start_date.day
+        if group.end_date:
+            values['AF8'] = group.end_date.year
+            values['AK8'] = group.end_date.month
+            values['AP8'] = group.end_date.day
+
+        fname = f"04_様式6-3号(定額制)_{group.curriculum_name}_{company.company_name}.xlsx"
+        return self._patch(
+            "支給申請/04_定額制サービスによる訓練に関する経費助成の内訳(様式第6-3号).xlsx",
+            fname, values,
+        )
 
     def write_賃金助成内訳(self, company: CompanyInfo, group: CurriculumGroup) -> str:
         """03_賃金助成の内訳(様式第5号)
@@ -575,6 +646,9 @@ class ExcelWriter:
             jobs.append(("対象者一覧(3-2定額制)", lambda: self.write_対象者一覧_3_2(company, group)))
         else:
             jobs.append(("対象者一覧(3-1)", lambda: self.write_対象者一覧_3_1(company, group)))
+        # 様式第3号 (※電子申請のみ) - 常に追加生成
+        jobs.append(("対象者一覧(電子申請)",
+                     lambda: self.write_対象者一覧_電子申請(company, group)))
         jobs.append(("事前確認書",
                      lambda: self.write_事前確認書(company, sr, group, submit_date, teigaku=teigaku)))
 
@@ -590,13 +664,23 @@ class ExcelWriter:
     def generate_payment_documents(self, company: CompanyInfo, sr: SocialInsuranceLabor,
                                     group: CurriculumGroup, submit_date: datetime) -> List[str]:
         generated = []
+        teigaku = is_teigaku_course(group.subsidy_course)
+
         jobs = [
             ("支給申請書", lambda: self.write_支給申請書(company, sr, group, submit_date)),
-            ("経費助成内訳", lambda: self.write_経費助成内訳(company, group)),
+        ]
+        # 経費助成内訳: 定額制は 様式6-3号、通常は 様式6-2号
+        if teigaku:
+            jobs.append(("経費助成内訳(6-3号定額制)",
+                         lambda: self.write_経費助成内訳_定額制(company, group)))
+        else:
+            jobs.append(("経費助成内訳(6-2号)",
+                         lambda: self.write_経費助成内訳(company, group)))
+        jobs.extend([
             ("賃金助成内訳", lambda: self.write_賃金助成内訳(company, group)),
             ("事業所確認票", lambda: self.write_事業所確認票(company, group, submit_date)),
             ("支給申請承諾書", lambda: self.write_支給申請承諾書(company, group, submit_date)),
-        ]
+        ])
         for label, fn in jobs:
             try:
                 generated.append(fn())
