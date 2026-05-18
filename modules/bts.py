@@ -221,6 +221,169 @@ def _apply_changes(
     return len(updates)
 
 
+def _append_bts_item(item: dict) -> int:
+    """新規 BTS 項目をスプレッドシートに追記する。
+
+    動作:
+      - ヘッダー行を検出
+      - データブロック内で「内容」が空の最初の行を探して、そこに上書き
+      - 既存の placeholder 行に 項番 があればそれを採用、なければ自動採番
+      - 空き行が無ければ、シート末尾に append_row で追加
+
+    Returns:
+        書き込んだ行の 項番 (int)。失敗時は例外。
+    """
+    ws = _get_worksheet()
+    sheet_values = ws.get_all_values()
+    if not sheet_values:
+        raise RuntimeError("シートが空です。ヘッダー行が存在しません。")
+
+    header_idx = _find_header_row(sheet_values)
+    header = [str(c).strip() for c in sheet_values[header_idx]]
+    col_to_num = {name: i + 1 for i, name in enumerate(header)}
+
+    content_col = col_to_num.get("内容")
+    han_col = col_to_num.get("項番")
+    if not content_col:
+        raise RuntimeError("シートに「内容」列が見つかりません。")
+
+    # 1) データブロック内で「内容」が空の最初の行を探す
+    target_row = None
+    block_end = len(sheet_values)
+    for i in range(header_idx + 1, len(sheet_values)):
+        row = sheet_values[i]
+        # padding
+        if len(row) < len(header):
+            row = row + [""] * (len(header) - len(row))
+        # 二度目のヘッダー行に到達したらブロック終わり
+        if han_col and str(row[han_col - 1]).strip() == "項番":
+            block_end = i
+            break
+        if str(row[content_col - 1]).strip() == "":
+            target_row = i + 1  # 1-indexed
+            break
+
+    # 2) 自動採番: 既存項目の最大 項番 + 1
+    next_han = 1
+    if han_col:
+        used_nums = []
+        for i in range(header_idx + 1, block_end):
+            row = sheet_values[i]
+            if len(row) < len(header):
+                continue
+            content_val = str(row[content_col - 1]).strip()
+            han_val = str(row[han_col - 1]).strip()
+            if content_val and han_val.isdigit():
+                used_nums.append(int(han_val))
+        if used_nums:
+            next_han = max(used_nums) + 1
+
+    # 3) 書き込み行の決定: target_row が見つからなければ末尾に append
+    if target_row is None:
+        # シート末尾に新規行を追加
+        new_row_values = [""] * len(header)
+        for col_name, val in item.items():
+            if col_name in col_to_num:
+                new_row_values[col_to_num[col_name] - 1] = str(val or "")
+        if han_col:
+            new_row_values[han_col - 1] = str(next_han)
+        ws.append_row(new_row_values, value_input_option="USER_ENTERED")
+        return next_han
+
+    # 4) 既存の placeholder 行に書き込み (項番は placeholder の値を尊重)
+    if han_col:
+        placeholder_han = str(sheet_values[target_row - 1][han_col - 1]).strip()
+        if placeholder_han.isdigit():
+            next_han = int(placeholder_han)
+
+    updates = []
+    for col_name, val in item.items():
+        if col_name not in col_to_num:
+            continue
+        col_num = col_to_num[col_name]
+        cell = f"{_col_letter(col_num)}{target_row}"
+        updates.append({"range": cell, "values": [[str(val or "")]]})
+    # 項番セルも書き込む (placeholder と同じ値 or 新規採番)
+    if han_col:
+        cell = f"{_col_letter(han_col)}{target_row}"
+        updates.append({"range": cell, "values": [[str(next_han)]]})
+
+    if updates:
+        ws.batch_update(updates, value_input_option="USER_ENTERED")
+    return next_han
+
+
+def _render_new_entry_form(default_author: str = "") -> None:
+    """新規項目登録フォームを描画する。送信時にシートに書き込む。"""
+    with st.form("bts_new_entry_form", clear_on_submit=True):
+        st.markdown("#### ➕ 新規項目を登録")
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            kubun = st.selectbox(
+                "処理区分",
+                options=["", "バックエンド", "フロントエンド", "書式", "UI", "その他"],
+                key="bts_new_kubun",
+            )
+            author = st.text_input("起票者", value=default_author, key="bts_new_author")
+            category = st.selectbox(
+                "区分",
+                options=["", "バグ", "設定ミス", "マッピングミス", "UIの問題", "未設定", "その他"],
+                key="bts_new_category",
+            )
+        with col2:
+            status = st.selectbox(
+                "対応状況",
+                options=STATUS_OPTIONS,
+                index=STATUS_OPTIONS.index("オープン") if "オープン" in STATUS_OPTIONS else 0,
+                key="bts_new_status",
+            )
+            ver = st.text_input("ver (任意)", value="", key="bts_new_ver")
+            bug_note = st.text_input("バグ (任意)", value="", key="bts_new_bug")
+
+        content = st.text_area(
+            "内容 *",
+            placeholder="例: 様式X-X で 〇〇 が反映されない",
+            key="bts_new_content",
+        )
+        policy = st.text_area(
+            "修正方針 (任意)",
+            placeholder="どう直すか / 確認事項など",
+            key="bts_new_policy",
+        )
+        fix_detail = st.text_area(
+            "修正内容 (任意)",
+            placeholder="具体的にどう修正したか",
+            key="bts_new_fix",
+        )
+
+        submitted = st.form_submit_button(
+            "📝 登録", type="primary", width='stretch'
+        )
+
+    if submitted:
+        if not content.strip():
+            st.error("「内容」は必須です。")
+            return
+        item = {
+            "処理区分": kubun,
+            "内容": content.strip(),
+            "起票者": author.strip(),
+            "区分": category,
+            "修正方針": policy.strip(),
+            "バグ": bug_note.strip(),
+            "対応状況": status,
+            "ver": ver.strip(),
+            "修正内容": fix_detail.strip(),
+        }
+        try:
+            han = _append_bts_item(item)
+            st.success(f"✅ 項番 {han} として登録しました。")
+            _load_bts_dataframe.clear()
+            st.rerun()
+        except Exception as e:
+            st.error(f"登録に失敗しました: {type(e).__name__}: {e}")
+
+
 def _render_credentials_help(extra_error: str = "") -> None:
     st.error("⚠️ サービスアカウントの認証情報が設定されていません。")
     if extra_error:
@@ -311,13 +474,37 @@ def render_bts_panel() -> None:
 
     st.markdown("---")
 
-    # ---- 編集モードのトグル ----
-    edit_mode = st.toggle(
-        "✏️ 編集モード",
-        value=False,
-        key="bts_edit_mode",
-        help="ONにするとテーブル上で直接編集→保存できます",
-    )
+    # ---- モード切替 (新規登録 / 編集) ----
+    mode_col1, mode_col2 = st.columns([1, 1])
+    with mode_col1:
+        new_entry_mode = st.toggle(
+            "➕ 新規登録",
+            value=False,
+            key="bts_new_entry_mode",
+            help="ONにすると新規項目登録フォームを表示します",
+        )
+    with mode_col2:
+        edit_mode = st.toggle(
+            "✏️ 編集モード",
+            value=False,
+            key="bts_edit_mode",
+            help="ONにするとテーブル上で直接編集→保存できます",
+            disabled=new_entry_mode,
+        )
+
+    # ---- 新規登録フォーム ----
+    if new_entry_mode:
+        # 起票者のデフォルトはログイン中ユーザー
+        try:
+            from .auth import get_current_user
+            current_user = get_current_user() or ""
+            # email 形式なら @ より前を初期値とする (例: chiba@dxhr.inc → chiba)
+            default_author = current_user.split("@")[0] if "@" in current_user else current_user
+        except Exception:
+            default_author = ""
+        _render_new_entry_form(default_author=default_author)
+        st.markdown("---")
+        st.caption("下に既存の一覧も表示されます。")
 
     # ---- フィルタ ----
     filter_col1, filter_col2 = st.columns([2, 3])
