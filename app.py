@@ -266,10 +266,37 @@ def render_step3():
 
     st.markdown("---")
 
+    # 既存の受講者データがあれば「前回のデータを使用」UIを表示 (戻るボタン対策)
+    saved_groups = get_saved_participant_groups()
+    if saved_groups:
+        st.success("✅ 受講者データは保持されています。再アップロード不要で次へ進めます。")
+        with st.expander("📊 保持中の受講者データを確認", expanded=True):
+            for key, grp in saved_groups.items():
+                st.markdown(
+                    f"- **{grp.curriculum_name}** ({grp.subsidy_course}) - "
+                    f"{len(grp.participants)}名 / "
+                    f"{grp.start_date.strftime('%Y/%m/%d')}〜{grp.end_date.strftime('%Y/%m/%d')}"
+                )
+        col_next, col_clear = st.columns([3, 1])
+        with col_next:
+            if st.button("次へ進む ▶", type="primary", width='stretch',
+                         key="step3_next_with_saved"):
+                st.session_state.current_step = 4
+                st.rerun()
+        with col_clear:
+            if st.button("🗑️ クリアして再アップロード", width='stretch',
+                         help="受講者一覧ファイルを差し替えたい場合はここをクリック"):
+                for k in ('participant_groups', 'all_participants'):
+                    st.session_state.pop(k, None)
+                st.rerun()
+        return  # 保存済みデータがある場合はアップロード UI を表示しない
+
+    # 受講者データが無い場合のみアップロード UI を表示
     result = render_upload_form()
 
     if result:
-        if st.button("次へ進む ▶", type="primary", width='stretch'):
+        if st.button("次へ進む ▶", type="primary", width='stretch',
+                     key="step3_next_after_upload"):
             st.session_state.current_step = 4
             st.rerun()
 
@@ -308,27 +335,38 @@ def render_step4():
             "テンプレートファイル一式をZIPで出力します（中身は手動で入力してください）。"
         )
 
+    # widget のデフォルト値を session_state に初期化 (初回のみ、戻る対応)
+    if '_generate_plan' not in st.session_state:
+        st.session_state['_generate_plan'] = True
+    if '_generate_payment' not in st.session_state:
+        st.session_state['_generate_payment'] = True
+    if '_submit_date' not in st.session_state:
+        st.session_state['_submit_date'] = datetime.now().date()
+
     st.subheader("書類種類の選択")
     col1, col2 = st.columns(2)
     with col1:
-        generate_plan = st.checkbox("📋 計画申請書類を生成", value=True)
+        generate_plan = st.checkbox("📋 計画申請書類を生成", key="_generate_plan")
     with col2:
-        generate_payment = st.checkbox("💰 支給申請書類を生成", value=True)
+        generate_payment = st.checkbox("💰 支給申請書類を生成", key="_generate_payment")
 
     st.subheader("カリキュラムの選択")
     selected_curricula = []
     for key, group in groups.items():
         teigaku = is_teigaku_course(group.subsidy_course)
         teigaku_mark = "🟢 **定額制として認識**" if teigaku else "⚪ 通常コース"
+        # widget のデフォルト値を session_state に初期化 (戻る対応)
+        sk = f"curriculum_{key}"
+        if sk not in st.session_state:
+            st.session_state[sk] = True
         if st.checkbox(
             f"📚 {group.curriculum_name}（{group.subsidy_course}）- {len(group.participants)}名  ｜  {teigaku_mark}",
-            value=True,
-            key=f"curriculum_{key}"
+            key=sk,
         ):
             selected_curricula.append(key)
 
     st.subheader("提出日")
-    submit_date = st.date_input("提出予定日", value=datetime.now())
+    submit_date = st.date_input("提出予定日", key="_submit_date")
 
     # セッションに保存
     st.session_state['generate_plan'] = generate_plan
