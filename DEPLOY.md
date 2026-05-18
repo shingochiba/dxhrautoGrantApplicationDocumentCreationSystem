@@ -173,3 +173,116 @@ URL: https://dxhr-docgen.streamlit.app/
 - 5人のパスワードは全員同じにせず、各自別のパスワードにする方が安全
 - 退職者が出たら即座に該当ユーザーの行を削除
 - secrets.toml は **絶対に GitHub にコミットしない**（`.gitignore` で防止済み）
+
+---
+
+## BTS (バグ・タスク管理) 連携の設定
+
+BTS スプレッドシートを非公開のまま Streamlit アプリから読み込むため、Google Cloud のサービスアカウントを使用します。
+
+### Step A: サービスアカウント作成
+
+1. [Google Cloud Console](https://console.cloud.google.com/) にログイン
+2. 新規プロジェクト作成 (既存でもOK / 例: `dxhr-docgen`)
+3. **APIとサービス → ライブラリ** で「Google Sheets API」を検索→**有効にする**
+4. **APIとサービス → 認証情報** → 「**認証情報を作成**」→「**サービスアカウント**」
+5. 任意の名前 (例: `bts-reader`) を入力→作成→「完了」
+6. 作成したサービスアカウントをクリック→「**鍵**」タブ→「鍵を追加」→「**新しい鍵を作成**」→形式「**JSON**」→作成
+7. JSONファイルが自動ダウンロードされる (例: `dxhr-docgen-xxxxx.json`)
+
+### Step B: スプレッドシートを共有
+
+1. JSON ファイルを開いて `client_email` の値 (`xxx@xxx.iam.gserviceaccount.com`) をコピー
+2. BTS スプレッドシートを開き、右上「**共有**」をクリック
+3. コピーしたメールアドレスを貼り付け、権限を「**閲覧者**」のままで追加
+4. 「送信」をクリック (通知は不要)
+
+### Step C: Streamlit Cloud に登録
+
+#### 🛠 一発変換 (おすすめ)
+
+ダウンロードした JSON を Streamlit Secrets 用 TOML に自動変換するスクリプトを同梱しています。
+
+```powershell
+# ローカルでダウンロードした JSON ファイルを指定
+python tools/convert_sa_json_to_toml.py "C:\path\to\dxhr-docgen-xxxxx.json"
+```
+
+出力された `[gcp_service_account]` セクションを、Streamlit Cloud の **Settings → Secrets** で既存の `[passwords]` セクションの下にそのまま貼り付ければ完了。`private_key` の改行も三連クォートで正しくエスケープされた状態で出力されます。
+
+#### 手動で TOML を書く場合
+
+1. Streamlit Cloud のアプリ管理画面 → **Settings** → **Secrets**
+2. 既存の `[passwords]` セクションの**下に**以下を追記 (各値は **JSON の対応するフィールドの中身そのもの** に置換):
+
+```toml
+[gcp_service_account]
+type = "service_account"
+project_id = "your-project-id"
+private_key_id = "abc123def456..."
+private_key = """-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQ...
+...
+...vQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQ==
+-----END PRIVATE KEY-----
+"""
+client_email = "bts-reader@your-project-id.iam.gserviceaccount.com"
+client_id = "123456789012345678901"
+auth_uri = "https://accounts.google.com/o/oauth2/auth"
+token_uri = "https://oauth2.googleapis.com/token"
+auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"
+client_x509_cert_url = "https://www.googleapis.com/robot/v1/metadata/x509/bts-reader%40your-project-id.iam.gserviceaccount.com"
+```
+
+3. **Save** をクリックすると、アプリが自動再起動
+
+#### ⚠️ よくある TOML エラーと対処
+
+**「Invalid format: please enter valid TOML.」** が出る場合、ほぼ `private_key` の書き方が原因です。
+
+**正しい方法 (推奨): 三連クォート `"""` で囲み、改行はそのまま**
+
+JSON ファイル内では `private_key` は1行に潰されて `\n` 文字列として書かれていますが、TOML では以下のように **三連クォートで囲んで実改行に展開して** 貼り付けます:
+
+```toml
+private_key = """-----BEGIN PRIVATE KEY-----
+MIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQ...
+（複数行つづく）
+-----END PRIVATE KEY-----
+"""
+```
+
+JSON の `"private_key": "-----BEGIN ...\nXXX\n...\n-----END PRIVATE KEY-----\n"` から TOML に変換する手順:
+1. 先頭の `"private_key": "` と末尾の `"` を削除
+2. 文字列中の `\n` を実際の改行に置換 (テキストエディタの「\n を改行に置換」機能を使う)
+3. `private_key = """` と `"""` で囲む
+
+**代替方法: 1行に書いて `\n` のまま (こちらでも動く)**
+
+```toml
+private_key = "-----BEGIN PRIVATE KEY-----\nMIIEvQ...\n-----END PRIVATE KEY-----\n"
+```
+
+`\n` をバックスラッシュ + n の2文字のまま (改行を入れず) 1行で書く方法。JSON の値をそのままダブルクォート間に貼ればよい。
+
+**やってはいけないこと:**
+- ダブルクォート `"..."` で囲んだ中に **実改行を入れる** → これがエラーの主因。基本文字列は単一行のみ許可されます。
+- 値を囲むクォートを忘れる
+- 文字列の前後に余計な空白や `,` が残っている
+
+#### 他フィールドの注意点
+- `project_id`, `client_email`, `private_key_id`, `client_id`, `client_x509_cert_url` も JSON の値をそのままダブルクォートで囲む
+- `client_x509_cert_url` の `@` 記号は **URLエンコードで `%40`** になっている (JSON の表記そのままでOK)
+
+### Step D: ローカル開発時の設定 (任意)
+
+ローカルで動かす場合は以下のいずれかで認証情報を渡す:
+
+- **方法1**: ダウンロードした JSON を `config/google_service_account.json` にリネームして配置 (`.gitignore` で除外済)
+- **方法2**: `.streamlit/secrets.toml` に上記 `[gcp_service_account]` セクションを追加
+- **方法3**: 環境変数 `GOOGLE_APPLICATION_CREDENTIALS` に JSON のフルパスを設定
+
+### 動作確認
+
+アプリ起動後、サイドバーの「🐛 BTS (バグ・タスク管理)」をクリックして一覧が表示されればOK。
+権限エラーが出た場合は Step B のスプレッドシート共有を見直してください。

@@ -24,6 +24,7 @@ from modules.document_generator import DocumentGenerator, FORMAT_CONFIGS, get_fo
 from modules.excel_writer import is_teigaku_course
 from modules.storage import load_saved_company, load_saved_sr, clear_saved
 from modules.auth import render_login_gate, get_current_user, logout
+from modules.bts import render_bts_panel
 
 # アプリの設定
 st.set_page_config(
@@ -168,6 +169,16 @@ def render_sidebar():
             st.success(f"✅ カリキュラム: {len(groups)}件")
         else:
             st.warning("⬜ 受講者未アップロード")
+
+        st.markdown("---")
+
+        # BTS (バグ・タスク管理) パネルへの切替
+        bts_on = bool(st.session_state.get('_show_bts'))
+        bts_label = "📄 書類作成に戻る" if bts_on else "🐛 BTS (バグ・タスク管理)"
+        if st.button(bts_label, use_container_width=True, key="sidebar_bts_toggle",
+                     help="BTSスプレッドシートと連携してバグ・要望の一覧を表示します"):
+            st.session_state['_show_bts'] = not bts_on
+            st.rerun()
 
         st.markdown("---")
 
@@ -534,6 +545,12 @@ def main():
 
     # メインコンテンツ
     render_sidebar_toggle_button()
+
+    # BTS 表示モードならステップ画面の代わりに BTS パネルを描画
+    if st.session_state.get('_show_bts'):
+        render_bts_panel()
+        return
+
     st.title("人材開発支援助成金 書類自動作成ツール")
     st.markdown("会社情報と受講者一覧を入力して、計画申請・支給申請の書類を自動生成します。")
     st.markdown("---")
