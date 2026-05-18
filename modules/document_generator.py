@@ -118,13 +118,12 @@ class DocumentGenerator:
                         )
                         generated_files.extend(plan_files)
 
-                        # Word書類は現行書式のみ（R80302 には Word テンプレート無し）
-                        if format_id == "current":
-                            word_writer = WordWriter(str(format_template_dir), str(plan_dir))
-                            word_files = word_writer.generate_word_documents(
-                                company, group, submit_date
-                            )
-                            generated_files.extend(word_files)
+                        # Word書類: 各書式で存在するテンプレートだけ生成 (WordWriter 側でスキップ判定)
+                        word_writer = WordWriter(str(format_template_dir), str(plan_dir))
+                        word_files = word_writer.generate_word_documents(
+                            company, group, submit_date, sr=sr,
+                        )
+                        generated_files.extend(word_files)
                     else:
                         # Phase 1 スタブ: テンプレートをそのまま出力（中身は未入力）
                         stub_files = self._copy_templates_as_stub(
