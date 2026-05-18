@@ -404,24 +404,38 @@ class ExcelWriterR070401(ExcelWriter):
         マージセル分析で特定したデータ位置:
           - 訓練コース名 (3) → AG6
           - 助成対象労働者数 (4) → J7
-          - 訓練の実施期間 始日 → M8/R8/W8 (年/月/日)
-          - 訓練の実施期間 終日 → AF8/AK8/AP8 (年/月/日)
+          - 契約者数（総受講者数）(5) → AG7
+          - 訓練の実施期間 始日 (6) → M8/R8/W8 (年/月/日)
+          - 訓練の実施期間 終日 (6) → AF8/AK8/AP8 (年/月/日)
+          - 契約期間 (7) → M9/R9/W9, AF9/AK9/AP9 (6欄と同じ日付)
+          - 基本利用料 (8欄(1)①) → AB13 = 単価 × 契約者数
+        日付欄はプルダウンに合わせて月/日を2桁ゼロ詰め文字列で書き込む。
         """
         values = {
             # 3 訓練コース名
             'AG6': group.curriculum_name,
             # 4 助成対象労働者数
             'J7': len(group.participants),
+            # 5 契約者数（総受講者数）
+            'AG7': len(group.participants),
         }
-        # 6 訓練の実施期間
+        # 6 訓練の実施期間 と 7 契約期間 (同じ日付を入れる)
         if group.start_date:
-            values['M8'] = group.start_date.year
-            values['R8'] = group.start_date.month
-            values['W8'] = group.start_date.day
+            sy = str(group.start_date.year)
+            sm = f"{group.start_date.month:02d}"
+            sd = f"{group.start_date.day:02d}"
+            values['M8'] = sy; values['R8'] = sm; values['W8'] = sd
+            values['M9'] = sy; values['R9'] = sm; values['W9'] = sd
         if group.end_date:
-            values['AF8'] = group.end_date.year
-            values['AK8'] = group.end_date.month
-            values['AP8'] = group.end_date.day
+            ey = str(group.end_date.year)
+            em = f"{group.end_date.month:02d}"
+            ed = f"{group.end_date.day:02d}"
+            values['AF8'] = ey; values['AK8'] = em; values['AP8'] = ed
+            values['AF9'] = ey; values['AK9'] = em; values['AP9'] = ed
+        # 8欄(1)① 基本利用料 = 単価 × 契約者数
+        if group.participants:
+            unit_price = group.participants[0].tuition_fee or 0
+            values['AB13'] = int(round(unit_price * len(group.participants)))
 
         fname = f"06_様式6-3号_{group.curriculum_name}_{company.company_name}.xlsx"
         return self._patch(
