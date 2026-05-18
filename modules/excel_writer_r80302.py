@@ -151,16 +151,24 @@ class ExcelWriterR80302(ExcelWriter):
 
     def write_対象者一覧_3_1(self, company: CompanyInfo, group: CurriculumGroup) -> str:
         """03_対象労働者一覧(様式第3-1号) - R80302版（セル位置は現行と同じ）
-        雇用形態のチェックボックスを employment_type から自動チェック。
+
+        受講者1件につき2行使用。
+          [本紙]  1〜20人目: 行13,15,...,51
+          [継紙] 21〜40人目: 行68,70,...,106 + ヘッダー C63/C64 にも転記
+        雇用形態のチェックボックスを employment_type から自動チェック (本紙+継紙)。
         """
         values = {
             'C8': company.company_name,
             'C9': group.curriculum_name,
+            # 継紙ヘッダー (常に書いても問題ない)
+            'C63': company.company_name,
+            'C64': group.curriculum_name,
         }
-        start_row = 13
-        rows_per_entry = 2
-        for idx, p in enumerate(group.participants):
-            r = start_row + idx * rows_per_entry
+        for idx, p in enumerate(group.participants[:40]):
+            if idx < 20:
+                r = 13 + idx * 2
+            else:
+                r = 68 + (idx - 20) * 2
             values[f'B{r}'] = p.name
             parts = (p.insurance_number or "").replace('−', '-').replace('ー', '-').split('-')
             if len(parts) == 3:
@@ -168,7 +176,7 @@ class ExcelWriterR80302(ExcelWriter):
                 values[f'F{r}'] = parts[1]
                 values[f'I{r}'] = parts[2]
 
-        # 雇用形態チェックボックス（正規雇用/有期契約）の状態を生成
+        # 雇用形態チェックボックス（正規雇用/有期契約）の状態を生成 (本紙+継紙)
         checkbox_states = get_3_1_employment_checkboxes(group.participants)
 
         fname = f"03_対象労働者一覧(3-1)_{company.company_name}_{group.curriculum_name}.xlsx"

@@ -86,13 +86,16 @@ def get_4_2_teigaku_checkboxes(subsidy_course: str) -> Dict[int, bool]:
     return {14: teigaku}
 
 
-def get_3_1_employment_checkboxes(participants, max_participants: int = 80) -> Dict[int, bool]:
+def get_3_1_employment_checkboxes(participants, max_participants: int = 40) -> Dict[int, bool]:
     """様式3-1号（対象労働者一覧）の雇用形態チェックボックス状態を生成
 
     現行・R80302 書式共通のマッピング規則:
-      参加者 idx (0-indexed) → 行 (13 + idx*2)
-      - 正規雇用労働者等 チェックボックス: ctrlProp(1 + idx*2)
-      - 有期契約労働者等 チェックボックス: ctrlProp(2 + idx*2)
+      [本紙] 参加者 idx 0〜19 (1〜20人目) → 行 (13 + idx*2)
+        - 正規雇用労働者等 チェックボックス: ctrlProp(1 + idx*2)        … 1,3,5,...,39
+        - 有期契約労働者等 チェックボックス: ctrlProp(2 + idx*2)        … 2,4,6,...,40
+      [継紙] 参加者 idx 20〜39 (21〜40人目) → 行 (68 + (idx-20)*2)
+        - 正規雇用労働者等 チェックボックス: ctrlProp(81 + (idx-20)*2)   … 81,83,...,119
+        - 有期契約労働者等 チェックボックス: ctrlProp(82 + (idx-20)*2)   … 82,84,...,120
 
     各参加者の employment_type に「正規」を含む → 正規側 True
                                     「有期」を含む → 有期側 True
@@ -102,10 +105,16 @@ def get_3_1_employment_checkboxes(participants, max_participants: int = 80) -> D
         if idx >= max_participants:
             break
         emp = getattr(p, 'employment_type', '') or ''
-        regular_ctrl = 1 + idx * 2  # ctrlProp1, 3, 5, ...
-        fixed_ctrl = 2 + idx * 2    # ctrlProp2, 4, 6, ...
         is_regular = '正規' in emp
         is_fixed = '有期' in emp
+        if idx < 20:
+            regular_ctrl = 1 + idx * 2
+            fixed_ctrl = 2 + idx * 2
+        else:
+            # 継紙: 21〜40人目
+            cont_idx = idx - 20
+            regular_ctrl = 81 + cont_idx * 2
+            fixed_ctrl = 82 + cont_idx * 2
         states[regular_ctrl] = is_regular
         states[fixed_ctrl] = is_fixed
     return states
@@ -284,18 +293,26 @@ class ExcelWriter:
         """03_対象者一覧(様式第3-1号) 通常用
         列構成: A=No(pre-filled), B=氏名, C=被保険者番号4桁, F=6桁, I=1桁,
                J=雇用形態(チェックボックス), L=採用予定日, S=対象労働者属性
-        受講者1件につき2行使用 (行13-14 が1件目、行15-16 が2件目...)
+        受講者1件につき2行使用。
+          [本紙]  1〜20人目: 行13,15,...,51
+          [継紙] 21〜40人目: 行68,70,...,106 + ヘッダー C63/C64 にも会社名・コース名を転記
         雇用形態のチェックボックスは employment_type から自動チェック。
         """
         values = {
             'C8': company.company_name,
             'C9': group.curriculum_name,
+            # 継紙ヘッダー (項目21人目以降がある場合のみ意味があるが、常に書いても問題ない)
+            'C63': company.company_name,
+            'C64': group.curriculum_name,
         }
-        start_row = 13
-        rows_per_entry = 2
-        for idx, p in enumerate(group.participants):
-            r = start_row + idx * rows_per_entry
-            # B列(B13:B14 merged): 氏名
+        for idx, p in enumerate(group.participants[:40]):
+            if idx < 20:
+                # 本紙: 1〜20人目 → 行13,15,...,51
+                r = 13 + idx * 2
+            else:
+                # 継紙: 21〜40人目 → 行68,70,...,106
+                r = 68 + (idx - 20) * 2
+            # B列 (B{r}:B{r+1} merged): 氏名
             values[f'B{r}'] = p.name
             # 雇用保険被保険者番号: C(4桁) / F(6桁) / I(1桁)
             parts = (p.insurance_number or "").replace('−', '-').replace('ー', '-').split('-')
@@ -304,7 +321,7 @@ class ExcelWriter:
                 values[f'F{r}'] = parts[1]
                 values[f'I{r}'] = parts[2]
 
-        # 雇用形態チェックボックス（正規雇用/有期契約）の状態を生成
+        # 雇用形態チェックボックス（正規雇用/有期契約）の状態を生成 (本紙+継紙 両対応)
         checkbox_states = get_3_1_employment_checkboxes(group.participants)
 
         fname = f"03_対象者一覧(3-1)_{company.company_name}_{group.curriculum_name}.xlsx"
