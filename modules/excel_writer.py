@@ -208,7 +208,7 @@ class ExcelWriter:
 
         values = {
             # 提出日
-            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': submit_date.day,
+            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': "",
             # 管轄労働局（県名のみ）
             'B7': labor_bureau_short(company.labor_bureau),
             # 事業主 郵便番号/住所/名称/代表者/法人番号
@@ -281,7 +281,7 @@ class ExcelWriter:
             # 申請事業主の証明欄の日付 (●●●●年 ●●月 ●●日)
             'H73': submit_date.year,
             'L73': submit_date.month,
-            'O73': submit_date.day,
+            'O73': "",  # 日は空欄
             # 代表者役職名・氏名
             'K76': company.representative_title,
             'K77': company.representative_name,
@@ -416,7 +416,7 @@ class ExcelWriter:
         spp1, spp2, spp3 = split_phone(sr.phone_number) if sr else ("", "", "")
 
         values = {
-            'E12': submit_date.year, 'I12': submit_date.month, 'L12': submit_date.day,
+            'E12': submit_date.year, 'I12': submit_date.month, 'L12': "",
             'S13': p1, 'W13': p2,
             'R14': company.address,
             'R16': company.company_name,
@@ -452,7 +452,7 @@ class ExcelWriter:
             male = len(group.participants)
 
         values = {
-            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': submit_date.day,
+            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': "",
             'B7': labor_bureau_short(company.labor_bureau),
             'AG9': p1, 'AL9': p2,
             'AF10': company.address,
@@ -579,7 +579,7 @@ class ExcelWriter:
           従たる事業所1-10 行21,23,25,27,29,31,33,35,37,39: B/D/I/P/Q
         """
         values = {
-            'N3': submit_date.year, 'R3': submit_date.month, 'T3': submit_date.day,
+            'N3': submit_date.year, 'R3': submit_date.month, 'T3': "",
             'B4': labor_bureau_short(company.labor_bureau),
             'L8': company.company_name,
             'L10': company.address,
@@ -641,7 +641,7 @@ class ExcelWriter:
         """
         values = {
             # 確認日
-            'R24': submit_date.year, 'V24': submit_date.month, 'Y24': submit_date.day,
+            'R24': submit_date.year, 'V24': submit_date.month, 'Y24': "",
             # 対象訓練 (1件目)
             'F40': group.curriculum_name,
             # 申請事業主

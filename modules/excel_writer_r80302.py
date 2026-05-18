@@ -62,7 +62,7 @@ class ExcelWriterR80302(ExcelWriter):
 
         values = {
             # 提出日
-            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': submit_date.day,
+            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': "",
             # 管轄労働局（県名のみ）
             'B7': labor_bureau_short(company.labor_bureau),
             # 事業主 郵便番号/住所/名称/代表者/法人番号
@@ -138,7 +138,7 @@ class ExcelWriterR80302(ExcelWriter):
             # 申請事業主の証明欄の日付（行73 → 行74）
             'H74': submit_date.year,
             'L74': submit_date.month,
-            'O74': submit_date.day,
+            'O74': "",  # 日は空欄
             # 代表者役職名・氏名（行76,77 → 行77,78）
             'K77': company.representative_title,
             'K78': company.representative_name,
@@ -227,7 +227,7 @@ class ExcelWriterR80302(ExcelWriter):
         spp1, spp2, spp3 = split_phone(sr.phone_number) if sr else ("", "", "")
 
         values = {
-            'E12': submit_date.year, 'I12': submit_date.month, 'L12': submit_date.day,
+            'E12': submit_date.year, 'I12': submit_date.month, 'L12': "",
             'S13': p1, 'W13': p2,
             'R14': company.address,
             'R16': company.company_name,
@@ -271,7 +271,7 @@ class ExcelWriterR80302(ExcelWriter):
             # 提出日 (R3:S3 merged=年, U3=月, W3=日)
             'R3': submit_date.year,
             'U3': submit_date.month,
-            'W3': submit_date.day,
+            'W3': "",  # 日は空欄
             # 事業主名 (M8:X8 merged - J8は「事業主：」ラベル)
             'M8': company.company_name,
             # 所在地 (M10:X10 merged - J10は「所在地：」ラベル)
@@ -326,7 +326,7 @@ class ExcelWriterR80302(ExcelWriter):
             male = len(group.participants)
 
         values = {
-            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': submit_date.day,
+            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': "",
             'B7': labor_bureau_short(company.labor_bureau),
             'AG9': p1, 'AL9': p2,
             'AF10': company.address,
@@ -488,7 +488,7 @@ class ExcelWriterR80302(ExcelWriter):
                           submit_date: datetime) -> str:
         """05_事業所確認票(様式第13号) - R80302版（セル位置は現行と同じ）"""
         values = {
-            'N3': submit_date.year, 'R3': submit_date.month, 'T3': submit_date.day,
+            'N3': submit_date.year, 'R3': submit_date.month, 'T3': "",
             'B4': labor_bureau_short(company.labor_bureau),
             'L8': company.company_name,
             'L10': company.address,
@@ -548,7 +548,7 @@ class ExcelWriterR80302(ExcelWriter):
         """
         values = {
             # 確認日
-            'R24': submit_date.year, 'V24': submit_date.month, 'Y24': submit_date.day,
+            'R24': submit_date.year, 'V24': submit_date.month, 'Y24': "",
             # 対象訓練（1件目）
             'F40': group.curriculum_name,
             # 申請事業主

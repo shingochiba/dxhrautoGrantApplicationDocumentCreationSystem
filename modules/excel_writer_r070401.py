@@ -81,7 +81,7 @@ class ExcelWriterR070401(ExcelWriter):
 
         values = {
             # 提出日
-            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': submit_date.day,
+            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': "",
             # 管轄労働局（県名のみ）
             'B7': labor_bureau_short(company.labor_bureau),
             # 事業主 郵便番号/住所/名称/代表者/法人番号
@@ -158,7 +158,7 @@ class ExcelWriterR070401(ExcelWriter):
             # 申請事業主の証明欄の日付
             'H37': submit_date.year,
             'L37': submit_date.month,
-            'O37': submit_date.day,
+            'O37': "",  # 日は空欄
             # 代表者役職名・氏名
             'K40': company.representative_title,
             'K41': company.representative_name,
@@ -246,7 +246,7 @@ class ExcelWriterR070401(ExcelWriter):
             # 提出日 (R3:S3 merged=年, U3=月, W3=日)
             'R3': submit_date.year,
             'U3': submit_date.month,
-            'W3': submit_date.day,
+            'W3': "",  # 日は空欄
             # 事業主名 (M8:X8 merged)
             'M8': company.company_name,
             # 所在地 (M10:X10 merged)
@@ -295,7 +295,7 @@ class ExcelWriterR070401(ExcelWriter):
         spp1, spp2, spp3 = split_phone(sr.phone_number) if sr else ("", "", "")
 
         values = {
-            'E12': submit_date.year, 'I12': submit_date.month, 'L12': submit_date.day,
+            'E12': submit_date.year, 'I12': submit_date.month, 'L12': "",
             'S13': p1, 'W13': p2,
             'R14': company.address,
             'R16': company.company_name,
@@ -341,7 +341,7 @@ class ExcelWriterR070401(ExcelWriter):
             male = len(group.participants)
 
         values = {
-            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': submit_date.day,
+            'AL5': submit_date.year, 'AR5': submit_date.month, 'AU5': "",
             'B7': labor_bureau_short(company.labor_bureau),
             'AG9': p1, 'AL9': p2,
             'AF10': company.address,
@@ -471,7 +471,7 @@ class ExcelWriterR070401(ExcelWriter):
                           submit_date: datetime) -> str:
         """05_事業所確認票(様式第13号) - R070401版（位置は現行と同じ）"""
         values = {
-            'N3': submit_date.year, 'R3': submit_date.month, 'T3': submit_date.day,
+            'N3': submit_date.year, 'R3': submit_date.month, 'T3': "",
             'B4': labor_bureau_short(company.labor_bureau),
             'L8': company.company_name,
             'L10': company.address,
