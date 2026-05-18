@@ -84,6 +84,17 @@ def _apply_imported_company(imported: 'CompanyInfo') -> None:
         st.session_state['labor_bureau'] = lb
         st.session_state['_labor_bureau'] = lb
 
+    # offices (申請事業所と従たる事業所の一覧) を session_state に格納
+    # → 後段の save 処理 (render_company_form 内) が existing_offices として参照する
+    imported_offices = getattr(imported, 'offices', None) or []
+    if imported_offices:
+        st.session_state['_imported_offices'] = list(imported_offices)
+        # 既存の company_info に offices をマージしておく
+        # (まだフォーム未送信でも、後で _imported_offices が優先採用される)
+        existing_company = st.session_state.get('company_info')
+        if existing_company is not None:
+            existing_company.offices = list(imported_offices)
+
 
 def render_company_form() -> Optional[CompanyInfo]:
     """会社情報入力フォームを表示し、入力されたデータを返す"""
@@ -311,9 +322,14 @@ def render_company_form() -> Optional[CompanyInfo]:
             labor_bureau = suggested_bureau
             st.info(f"📍 住所「{detected_pref}」から管轄労働局を「{suggested_bureau}」に自動設定しました。")
 
-    # 既存のofficesを保持
-    existing = st.session_state.get('company_info')
-    existing_offices = list(existing.offices) if existing and getattr(existing, 'offices', None) else []
+    # 既存のofficesを保持: インポート直後の _imported_offices があればそれを優先、
+    # 無ければ session_state['company_info'].offices を流用
+    imported = st.session_state.get('_imported_offices')
+    if imported:
+        existing_offices = list(imported)
+    else:
+        existing = st.session_state.get('company_info')
+        existing_offices = list(existing.offices) if existing and getattr(existing, 'offices', None) else []
 
     company_info = CompanyInfo(
         company_name=company_name,
