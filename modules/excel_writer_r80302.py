@@ -17,6 +17,7 @@ from .excel_writer import (
     split_postal, split_phone, split_insurance_number,
     labor_bureau_short, get_insurance_office_name,
     get_training_method_checkboxes,
+    get_digital_training_checkboxes,
     get_3_1_employment_checkboxes,
     get_4_2_teigaku_checkboxes,
 )
@@ -120,6 +121,8 @@ class ExcelWriterR80302(ExcelWriter):
 
         # 12 訓練の実施方法のチェックボックスを助成コースに応じて設定
         checkbox_states = get_training_method_checkboxes(group.subsidy_course)
+        # 17 デジタル人材の育成 (R80302 は ctrlProp24〜29、現行と同じ)
+        checkbox_states.update(get_digital_training_checkboxes(group.curriculum_name, base_ctrl=24))
 
         fname = f"01_職業訓練実施計画届_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch(

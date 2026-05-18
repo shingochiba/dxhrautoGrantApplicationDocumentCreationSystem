@@ -120,6 +120,40 @@ def get_3_1_employment_checkboxes(participants, max_participants: int = 40) -> D
     return states
 
 
+def get_digital_training_checkboxes(curriculum_name: str, base_ctrl: int = 24) -> Dict[int, bool]:
+    """様式1-1号 項目17「デジタル人材の育成を目的に行う訓練の場合」のチェックボックス。
+
+    ctrlProp マッピング (base_ctrl=24 を起点とする連番):
+      base+0: ① ビジネスアーキテクト関係
+      base+1: ② データサイエンティスト関係
+      base+2: ③ ソフトウェアエンジニア関係
+      base+3: ④ サイバーセキュリティ関係
+      base+4: ⑤ デザイナー関係
+      base+5: ⑥ その他のデジタル人材関係 (テンプレート初期状態: チェック済み)
+
+    base_ctrl は書式ごとに異なる:
+      - 現行 / R80302: 24 (ctrlProp24〜29)
+      - R070401     : 26 (ctrlProp26〜31)
+
+    検出ルール:
+      カリキュラム名に「セキュリティ」または "Security"/"security" が含まれる
+      → ④ サイバーセキュリティ関係 にチェック、⑥ その他 を外す
+      → ①②③⑤ もすべて False で明示
+      それ以外 → 何も変更しない (テンプレート初期状態の ⑥ チェック済みを維持)
+    """
+    name = curriculum_name or ''
+    if 'セキュリティ' in name or 'Security' in name or 'security' in name:
+        return {
+            base_ctrl + 0: False,  # ①
+            base_ctrl + 1: False,  # ②
+            base_ctrl + 2: False,  # ③
+            base_ctrl + 3: True,   # ④ サイバーセキュリティ
+            base_ctrl + 4: False,  # ⑤
+            base_ctrl + 5: False,  # ⑥ その他 (外す)
+        }
+    return {}  # その他: テンプレート初期状態 (⑥ チェック済み) を維持
+
+
 def get_training_method_checkboxes(subsidy_course: str) -> Dict[int, bool]:
     """助成コース → 様式1-1号 「12 訓練の実施方法」のチェックボックス状態
 
@@ -267,6 +301,8 @@ class ExcelWriter:
 
         # 12 訓練の実施方法のチェックボックスを助成コースに応じて設定
         checkbox_states = get_training_method_checkboxes(group.subsidy_course)
+        # 17 デジタル人材の育成を目的に行う訓練 (現行は ctrlProp24〜29)
+        checkbox_states.update(get_digital_training_checkboxes(group.curriculum_name, base_ctrl=24))
 
         fname = f"01_職業訓練実施計画届_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch(
