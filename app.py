@@ -124,7 +124,7 @@ def render_sidebar():
         user = get_current_user()
         if user:
             st.caption(f"👤 {user}")
-            if st.button("🚪 ログアウト", use_container_width=True, key="sidebar_logout"):
+            if st.button("🚪 ログアウト", width='stretch', key="sidebar_logout"):
                 logout()
                 st.rerun()
 
@@ -175,7 +175,7 @@ def render_sidebar():
         # BTS (バグ・タスク管理) パネルへの切替
         bts_on = bool(st.session_state.get('_show_bts'))
         bts_label = "📄 書類作成に戻る" if bts_on else "🐛 BTS (バグ・タスク管理)"
-        if st.button(bts_label, use_container_width=True, key="sidebar_bts_toggle",
+        if st.button(bts_label, width='stretch', key="sidebar_bts_toggle",
                      help="BTSスプレッドシートと連携してバグ・要望の一覧を表示します"):
             st.session_state['_show_bts'] = not bts_on
             st.rerun()
@@ -183,13 +183,13 @@ def render_sidebar():
         st.markdown("---")
 
         # リセット系ボタン
-        if st.button("🔄 最初からやり直す", use_container_width=True,
+        if st.button("🔄 最初からやり直す", width='stretch',
                      help="ステップをリセットします（前回入力値は残ります）"):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
 
-        if st.button("🗑️ 保存した入力データを削除", use_container_width=True,
+        if st.button("🗑️ 保存した入力データを削除", width='stretch',
                      help="永続化された会社情報・社労士情報を完全に削除します"):
             clear_saved()
             for key in list(st.session_state.keys()):
@@ -212,7 +212,7 @@ def render_step1():
         st.markdown("---")
         st.info(f"✅ 前回保存された情報: {saved.company_name}")
         if st.button("Step 2（社労士情報）へ進む ▶", type="primary",
-                     use_container_width=True, key="step1_next_button"):
+                     width='stretch', key="step1_next_button"):
             st.session_state.current_step = 2
             st.rerun()
 
@@ -224,7 +224,7 @@ def render_step2():
 
     col1, col2 = st.columns([3, 1])
     with col2:
-        if st.button("◀ 戻る", use_container_width=True):
+        if st.button("◀ 戻る", width='stretch'):
             st.session_state.current_step = 1
             st.rerun()
 
@@ -237,7 +237,7 @@ def render_step2():
         st.markdown("---")
         st.info(f"✅ 前回保存された情報: {saved_sr.sr_name}")
         if st.button("Step 3（受講者一覧）へ進む ▶", type="primary",
-                     use_container_width=True, key="step2_next_button"):
+                     width='stretch', key="step2_next_button"):
             st.session_state.current_step = 3
             st.rerun()
 
@@ -249,7 +249,7 @@ def render_step3():
 
     col1, col2 = st.columns([3, 1])
     with col2:
-        if st.button("◀ 戻る", use_container_width=True):
+        if st.button("◀ 戻る", width='stretch'):
             st.session_state.current_step = 2
             st.rerun()
 
@@ -269,7 +269,7 @@ def render_step3():
     result = render_upload_form()
 
     if result:
-        if st.button("次へ進む ▶", type="primary", use_container_width=True):
+        if st.button("次へ進む ▶", type="primary", width='stretch'):
             st.session_state.current_step = 4
             st.rerun()
 
@@ -281,7 +281,7 @@ def render_step4():
 
     col1, col2 = st.columns([3, 1])
     with col2:
-        if st.button("◀ 戻る", use_container_width=True):
+        if st.button("◀ 戻る", width='stretch'):
             st.session_state.current_step = 3
             st.rerun()
 
@@ -338,7 +338,7 @@ def render_step4():
     st.session_state['format_id'] = format_id
 
     if selected_curricula and (generate_plan or generate_payment):
-        if st.button("📄 書類を生成する", type="primary", use_container_width=True):
+        if st.button("📄 書類を生成する", type="primary", width='stretch'):
             st.session_state.current_step = 5
             st.rerun()
     else:
@@ -351,7 +351,7 @@ def render_step5():
 
     col1, col2 = st.columns([3, 1])
     with col2:
-        if st.button("◀ 設定に戻る", use_container_width=True):
+        if st.button("◀ 設定に戻る", width='stretch'):
             st.session_state.current_step = 4
             st.rerun()
 
@@ -478,7 +478,7 @@ def render_step5():
                 st.error(f"ファイルが見つかりません: {zip_path}")
 
         st.markdown("---")
-        if st.button("🔄 新しい書類を生成する", use_container_width=True):
+        if st.button("🔄 新しい書類を生成する", width='stretch'):
             if 'generated_files' in st.session_state:
                 del st.session_state['generated_files']
             st.session_state.current_step = 4

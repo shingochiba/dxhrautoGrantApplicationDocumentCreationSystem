@@ -1,7 +1,7 @@
 """BTS (Bug Tracking System / バグ・タスク管理) パネル。
 
 Google Sheets API + サービスアカウント認証で、非公開スプレッドシートを
-読み込んで Streamlit 上に表示する。
+読み込み・編集して Streamlit 上に表示する。
 
 認証情報の取得順:
   1. st.secrets["gcp_service_account"] (Streamlit Cloud デプロイ向け推奨)
@@ -30,8 +30,19 @@ BTS_VIEW_URL = (
 _BASE_DIR = Path(__file__).resolve().parent.parent
 _DEFAULT_SA_JSON = _BASE_DIR / "config" / "google_service_account.json"
 
-# Google Sheets API のスコープ (読み取り専用)
-_SCOPES = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+# Google Sheets API スコープ (編集も行うため read/write)
+_SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+# ヘッダー検出に使うキーワード (これらのうち2つ以上含まれる行をヘッダー行とみなす)
+_HEADER_MARKERS = ("項番", "内容", "対応状況", "処理区分", "起票者")
+_HEADER_MIN_MATCHES = 2
+
+# 期待される列の順序 (表示・編集用)
+_EXPECTED_COLS = [
+    "項番", "処理区分", "内容", "起票者", "区分",
+    "修正方針", "バグ", "対応状況",
+    "対応完了の場合は、完了日", "ver", "修正内容",
+]
 
 # 対応状況の表示用設定: 表示順, アイコン
 STATUS_ORDER = ["オープン", "テスト中", "FB待ち", "クローズ", "未設定", ""]
@@ -41,6 +52,7 @@ STATUS_ICON = {
     "FB待ち": "🟨",
     "クローズ": "🟩",
 }
+STATUS_OPTIONS = ["", "オープン", "テスト中", "FB待ち", "クローズ"]
 
 
 class BTSCredentialsError(RuntimeError):
@@ -48,40 +60,27 @@ class BTSCredentialsError(RuntimeError):
 
 
 def _load_credentials_info() -> Tuple[dict, str]:
-    """サービスアカウントの credentials dict を返し、出所のラベルも返す。
-
-    Returns:
-        (credentials_dict, source_label)
-
-    Raises:
-        BTSCredentialsError: どこにも認証情報が見つからない場合。
-    """
-    # 1. st.secrets
+    """サービスアカウントの credentials dict を返し、出所のラベルも返す。"""
     try:
         if "gcp_service_account" in st.secrets:
             info = dict(st.secrets["gcp_service_account"])
             if info.get("client_email") and info.get("private_key"):
                 return info, "st.secrets[gcp_service_account]"
     except Exception:
-        # st.secrets がそもそも未設定の環境では FileNotFoundError 等が出る
         pass
 
-    # 2. 環境変数 GOOGLE_APPLICATION_CREDENTIALS
     env_path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS")
     if env_path and Path(env_path).is_file():
         with open(env_path, "r", encoding="utf-8") as f:
             info = json.load(f)
         return info, f"環境変数 GOOGLE_APPLICATION_CREDENTIALS ({env_path})"
 
-    # 3. ローカル既定パス
     if _DEFAULT_SA_JSON.is_file():
         with open(_DEFAULT_SA_JSON, "r", encoding="utf-8") as f:
             info = json.load(f)
         return info, str(_DEFAULT_SA_JSON)
 
-    raise BTSCredentialsError(
-        "サービスアカウントの認証情報が見つかりません。"
-    )
+    raise BTSCredentialsError("サービスアカウントの認証情報が見つかりません。")
 
 
 @st.cache_resource(show_spinner=False)
@@ -96,7 +95,6 @@ def _get_gspread_client():
 
 
 def _get_service_account_email() -> Optional[str]:
-    """設定されたサービスアカウントのメールアドレスを返す (未設定なら None)。"""
     try:
         info, _ = _load_credentials_info()
     except BTSCredentialsError:
@@ -104,46 +102,75 @@ def _get_service_account_email() -> Optional[str]:
     return info.get("client_email")
 
 
-@st.cache_data(ttl=120, show_spinner=False)
-def _load_bts_dataframe(sheet_id: str, gid: int) -> pd.DataFrame:
-    """Google Sheets API 経由でシートを取得し DataFrame を返す。
-
-    キャッシュ TTL は 120 秒。手動更新ボタンで `st.cache_data.clear()` を呼べる。
-    """
+def _get_worksheet():
+    """編集対象の worksheet を返す。"""
     client = _get_gspread_client()
-    spreadsheet = client.open_by_key(sheet_id)
-    worksheet = None
+    spreadsheet = client.open_by_key(BTS_SHEET_ID)
     for ws in spreadsheet.worksheets():
-        if ws.id == gid:
-            worksheet = ws
-            break
-    if worksheet is None:
-        # gid が見つからない場合は最初のシートを使う
-        worksheet = spreadsheet.get_worksheet(0)
+        if ws.id == BTS_GID:
+            return ws
+    return spreadsheet.get_worksheet(0)
 
-    # 全セル値を二次元配列で取得 (空欄を None ではなく空文字で扱う)
-    values = worksheet.get_all_values()
+
+def _find_header_row(values: List[List[str]]) -> int:
+    """_HEADER_MARKERS のうち _HEADER_MIN_MATCHES 個以上含む最初の行のインデックスを返す。
+    見つからなければ 0 (1行目をヘッダーとして扱う)。
+    """
+    for i, row in enumerate(values):
+        row_set = {str(c).strip() for c in row}
+        hits = sum(1 for m in _HEADER_MARKERS if m in row_set)
+        if hits >= _HEADER_MIN_MATCHES:
+            return i
+    return 0
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _load_bts_dataframe() -> Tuple[pd.DataFrame, int]:
+    """シート全体を取得し、(DataFrame, header_row_index_1based) を返す。
+
+    header_row_index は gspread でセル更新する際の行番号 (1-indexed) として使う。
+    """
+    ws = _get_worksheet()
+    values = ws.get_all_values()
     if not values:
-        return pd.DataFrame()
-    header = [str(h).strip() for h in values[0]]
-    df = pd.DataFrame(values[1:], columns=header)
-    return df
+        return pd.DataFrame(), 1
 
+    header_idx = _find_header_row(values)
+    header = [str(c).strip() for c in values[header_idx]]
+    data_rows = values[header_idx + 1:]
 
-def fetch_bts_items() -> pd.DataFrame:
-    """BTS 項目を取得して、空行除去・整形済みの DataFrame を返す。"""
-    df = _load_bts_dataframe(BTS_SHEET_ID, BTS_GID)
-    if df.empty:
-        return df
-    # 「内容」列があれば、内容が完全に空の行は除外
+    # 各行を header の長さに揃える
+    normalized = []
+    for r in data_rows:
+        if len(r) < len(header):
+            r = r + [""] * (len(header) - len(r))
+        elif len(r) > len(header):
+            r = r[: len(header)]
+        normalized.append(r)
+
+    df = pd.DataFrame(normalized, columns=header)
+    # 元の行番号 (1-indexed) を保持
+    df["_row"] = [header_idx + 2 + i for i in range(len(df))]
+
+    # 内容が空、または「項番」セルが見出し文字 (二度目のヘッダー) の行を除外
     if "内容" in df.columns:
-        df = df[df["内容"].astype(str).str.strip() != ""].copy()
-    # 「対応状況」列があれば、ソート用キーを付与
+        is_empty = df["内容"].astype(str).str.strip() == ""
+        is_dup_header = False
+        if "項番" in df.columns:
+            is_dup_header = df["項番"].astype(str).str.strip() == "項番"
+        df = df[~(is_empty | is_dup_header)].reset_index(drop=True)
+
+    return df, header_idx + 1  # 1-indexed header row
+
+
+def fetch_bts_items() -> Tuple[pd.DataFrame, int]:
+    """BTS 項目を取得して、(DataFrame, header_row_index) を返す。"""
+    df, header_row = _load_bts_dataframe()
     if "対応状況" in df.columns:
         df["_status_rank"] = df["対応状況"].map(
             lambda s: STATUS_ORDER.index(s) if s in STATUS_ORDER else len(STATUS_ORDER)
         )
-    return df
+    return df, header_row
 
 
 def _status_badge(status: str) -> str:
@@ -151,42 +178,58 @@ def _status_badge(status: str) -> str:
     return f"{icon} {status}" if status else "⬜ (未設定)"
 
 
+def _col_letter(n: int) -> str:
+    """1-indexed の列番号を Excel 列文字 (A, B, ..., AA) に変換。"""
+    out = ""
+    while n > 0:
+        n, rem = divmod(n - 1, 26)
+        out = chr(ord("A") + rem) + out
+    return out
+
+
+def _apply_changes(
+    edited_df: pd.DataFrame,
+    original_df: pd.DataFrame,
+    columns: List[str],
+) -> int:
+    """edited_df と original_df を比較し、変更されたセルをシートに書き戻す。
+    変更されたセル数を返す。
+    """
+    ws = _get_worksheet()
+    # 列名 -> 列番号 (1-indexed) のマップ
+    # 元の header に対応する列番号を取得するため、もう一度シートのヘッダーを読む
+    sheet_values = ws.get_all_values()
+    header_idx = _find_header_row(sheet_values)
+    header = [str(c).strip() for c in sheet_values[header_idx]]
+    col_to_num = {name: i + 1 for i, name in enumerate(header)}
+
+    # gspread の batch_update 用にセル更新を集める
+    updates = []
+    for i in range(len(edited_df)):
+        row_num = int(edited_df.iloc[i]["_row"])
+        for col in columns:
+            if col not in col_to_num:
+                continue
+            new_val = str(edited_df.iloc[i].get(col, "") or "")
+            old_val = str(original_df.iloc[i].get(col, "") or "")
+            if new_val != old_val:
+                cell = f"{_col_letter(col_to_num[col])}{row_num}"
+                updates.append({"range": cell, "values": [[new_val]]})
+
+    if updates:
+        ws.batch_update(updates, value_input_option="USER_ENTERED")
+    return len(updates)
+
+
 def _render_credentials_help(extra_error: str = "") -> None:
-    """認証情報が無いときの案内表示。"""
     st.error("⚠️ サービスアカウントの認証情報が設定されていません。")
     if extra_error:
         st.caption(f"詳細: {extra_error}")
-
     with st.expander("🔧 セットアップ手順", expanded=True):
         st.markdown(
-            "**1. Google Cloud でサービスアカウントを作成**\n"
-            "1. [Google Cloud Console](https://console.cloud.google.com/) にログイン\n"
-            "2. 新規プロジェクト作成 (既存でもOK)\n"
-            "3. **APIとサービス → ライブラリ** で「Google Sheets API」を検索→有効化\n"
-            "4. **APIとサービス → 認証情報** → 「認証情報を作成」→「サービスアカウント」\n"
-            "5. 任意の名前 (例: `bts-reader`) で作成→「キーを管理」→「鍵を追加」→「JSON」を選択してダウンロード\n"
-            "\n"
-            "**2. スプレッドシートを共有**\n"
-            f"- [BTS スプレッドシート]({BTS_VIEW_URL}) を開く\n"
-            "- 「共有」ボタン→ サービスアカウントの **client_email** (`xxxxx@xxxxx.iam.gserviceaccount.com`) を **閲覧者** として追加\n"
-            "\n"
-            "**3. 認証情報を配置 (いずれか1つ)**\n"
-            "- **A. Streamlit Cloud (本番運用推奨)**: アプリ設定の `Secrets` 欄に下記をペースト\n"
-            "```toml\n"
-            "[gcp_service_account]\n"
-            'type = "service_account"\n'
-            'project_id = "xxx"\n'
-            'private_key_id = "xxx"\n'
-            'private_key = "-----BEGIN PRIVATE KEY-----\\nxxx\\n-----END PRIVATE KEY-----\\n"\n'
-            'client_email = "xxx@xxx.iam.gserviceaccount.com"\n'
-            'client_id = "xxx"\n'
-            'auth_uri = "https://accounts.google.com/o/oauth2/auth"\n'
-            'token_uri = "https://oauth2.googleapis.com/token"\n'
-            'auth_provider_x509_cert_url = "https://www.googleapis.com/oauth2/v1/certs"\n'
-            'client_x509_cert_url = "xxx"\n'
-            "```\n"
-            "- **B. ローカル開発**: ダウンロードしたJSONを `config/google_service_account.json` に置く (gitignore済)\n"
-            "- **C. 環境変数**: `GOOGLE_APPLICATION_CREDENTIALS` にJSONファイルのフルパスを設定"
+            "DEPLOY.md の「BTS (バグ・タスク管理) 連携の設定」セクションを参照してください。\n\n"
+            "ローカル開発の場合: ダウンロードした JSON を "
+            "`config/google_service_account.json` に配置してください。"
         )
 
 
@@ -194,40 +237,37 @@ def render_bts_panel() -> None:
     """BTS パネルを Streamlit に描画する。"""
     st.header("🐛 BTS (バグ・タスク管理)")
     st.caption(
-        "Google スプレッドシートと連携して、バグ・機能要望の対応状況を確認できます。"
+        "Google スプレッドシートと連携して、バグ・機能要望の対応状況を確認・編集できます。"
     )
 
     col_link, col_refresh = st.columns([4, 1])
     with col_link:
         st.markdown(
             f"📊 [スプレッドシートを開く]({BTS_VIEW_URL})  ｜ "
-            "編集はスプレッドシート側で行ってください"
+            "編集はアプリ内のテーブルでも、スプレッドシート側でも可能です"
         )
     with col_refresh:
-        if st.button("🔄 再取得", use_container_width=True, key="bts_refresh"):
+        if st.button("🔄 再取得", width='stretch', key="bts_refresh"):
             _load_bts_dataframe.clear()
             st.rerun()
 
-    # サービスアカウントメールの表示 (共有用)
     sa_email = _get_service_account_email()
     if sa_email:
         st.caption(f"🔐 サービスアカウント: `{sa_email}`")
 
     # 取得
     try:
-        df = fetch_bts_items()
+        df, _header_row = fetch_bts_items()
     except BTSCredentialsError as e:
         _render_credentials_help(str(e))
         return
     except Exception as e:
         msg = str(e)
         if "PERMISSION_DENIED" in msg or "403" in msg:
-            st.error(
-                "❌ サービスアカウントにスプレッドシートへのアクセス権がありません。"
-            )
+            st.error("❌ サービスアカウントにスプレッドシートへのアクセス権がありません。")
             st.markdown(
                 f"スプレッドシートの「共有」設定で、サービスアカウントのメール "
-                f"(`{sa_email or '不明'}`) を **閲覧者** として追加してください。"
+                f"(`{sa_email or '不明'}`) を **編集者** として追加してください。"
             )
             st.markdown(f"🔗 [スプレッドシートを開く]({BTS_VIEW_URL})")
         elif "APIError" in type(e).__name__ or "404" in msg:
@@ -240,7 +280,23 @@ def render_bts_panel() -> None:
 
     if df.empty:
         st.info("BTS に項目はありません。")
+        with st.expander("🔍 デバッグ: 取得状況", expanded=True):
+            try:
+                ws = _get_worksheet()
+                raw = ws.get_all_values()
+                st.write(f"シート総行数: {len(raw)}")
+                if raw:
+                    st.write("先頭5行 (生データ):")
+                    st.dataframe(pd.DataFrame(raw[:5]), width='stretch')
+            except Exception as ex:
+                st.code(f"{type(ex).__name__}: {ex}")
         return
+
+    # デバッグ情報 (常時表示・閉じている)
+    with st.expander("🔍 デバッグ: 取得した列・先頭行", expanded=False):
+        st.write("**取得列名**:", [c for c in df.columns if c != "_row"])
+        st.write(f"**ヘッダー行 (シート上の行番号)**: {_header_row}")
+        st.dataframe(df.head(3), width='stretch')
 
     # ---- サマリ (対応状況別件数) ----
     if "対応状況" in df.columns:
@@ -255,10 +311,18 @@ def render_bts_panel() -> None:
 
     st.markdown("---")
 
+    # ---- 編集モードのトグル ----
+    edit_mode = st.toggle(
+        "✏️ 編集モード",
+        value=False,
+        key="bts_edit_mode",
+        help="ONにするとテーブル上で直接編集→保存できます",
+    )
+
     # ---- フィルタ ----
     filter_col1, filter_col2 = st.columns([2, 3])
     selected_status: List[str] = []
-    if "対応状況" in df.columns:
+    if "対応状況" in df.columns and not edit_mode:
         with filter_col1:
             all_statuses = sorted(
                 [s for s in df["対応状況"].dropna().unique().tolist() if s],
@@ -272,38 +336,98 @@ def render_bts_panel() -> None:
                 key="bts_filter_status",
             )
     keyword = ""
-    with filter_col2:
-        keyword = st.text_input(
-            "キーワード検索 (内容・修正方針・修正内容)", value="", key="bts_filter_kw"
-        )
+    if not edit_mode:
+        with filter_col2:
+            keyword = st.text_input(
+                "キーワード検索 (内容・修正方針・修正内容)", value="", key="bts_filter_kw"
+            )
 
     filtered = df.copy()
-    if selected_status and "対応状況" in filtered.columns:
-        filtered = filtered[filtered["対応状況"].isin(selected_status)]
-    if keyword:
-        kw = keyword.strip()
-        search_cols = [c for c in ("内容", "修正方針", "修正内容", "起票者") if c in filtered.columns]
-        if search_cols:
-            mask = filtered[search_cols].apply(
-                lambda col: col.astype(str).str.contains(kw, na=False), axis=0
-            ).any(axis=1)
-            filtered = filtered[mask]
+    if not edit_mode:
+        if selected_status and "対応状況" in filtered.columns:
+            filtered = filtered[filtered["対応状況"].isin(selected_status)]
+        if keyword:
+            kw = keyword.strip()
+            search_cols = [c for c in ("内容", "修正方針", "修正内容", "起票者") if c in filtered.columns]
+            if search_cols:
+                mask = filtered[search_cols].apply(
+                    lambda col: col.astype(str).str.contains(kw, na=False), axis=0
+                ).any(axis=1)
+                filtered = filtered[mask]
 
     if "_status_rank" in filtered.columns:
         filtered = filtered.sort_values(["_status_rank", "項番"], na_position="last")
+    filtered = filtered.reset_index(drop=True)
 
-    # ---- 表示用に整形 ----
-    display_cols = [c for c in [
-        "項番", "処理区分", "内容", "起票者", "区分",
-        "修正方針", "バグ", "対応状況",
-        "対応完了の場合は、完了日", "ver", "修正内容",
-    ] if c in filtered.columns]
-    show_df = filtered[display_cols].reset_index(drop=True)
+    # 表示・編集対象の列
+    display_cols = [c for c in _EXPECTED_COLS if c in filtered.columns]
+    if not display_cols:
+        # 期待した列名が1つもマッチしない場合のフォールバック:
+        # シートから取得した全列を使う (_row は除外、文字列で表示)
+        display_cols = [c for c in filtered.columns if c != "_row"]
+        st.warning(
+            "⚠️ 期待した列名 (項番・処理区分・内容 等) と一致しませんでした。"
+            "シートから取得した列をそのまま表示しています。下のデバッグ情報をご確認ください。"
+        )
+        with st.expander("🔍 デバッグ: 取得した列名と先頭行", expanded=False):
+            st.write("**取得列**:", list(filtered.columns))
+            st.dataframe(filtered.head(3), width='stretch')
+
+    cols_for_show = display_cols + (["_row"] if "_row" in filtered.columns else [])
+    show_df = filtered[cols_for_show].copy()
 
     st.caption(f"表示中: {len(show_df)} 件 / 全 {len(df)} 件")
+
+    if edit_mode:
+        # ---- 編集モード: data_editor + 保存ボタン ----
+        editable_cols = [c for c in display_cols if c != "項番"]  # 項番は固定
+        column_config = {
+            "_row": None,  # 非表示
+            "項番": st.column_config.TextColumn("項番", width="small", disabled=True),
+            "処理区分": st.column_config.SelectboxColumn(
+                "処理区分",
+                options=["", "バックエンド", "フロントエンド", "書式", "UI", "その他"],
+                width="small",
+            ),
+            "内容": st.column_config.TextColumn("内容", width="large"),
+            "対応状況": st.column_config.SelectboxColumn(
+                "対応状況", options=STATUS_OPTIONS, width="small"
+            ),
+            "ver": st.column_config.TextColumn("ver", width="small"),
+        }
+        edited = st.data_editor(
+            show_df,
+            width='stretch',
+            hide_index=True,
+            column_config=column_config,
+            num_rows="fixed",
+            key="bts_editor",
+        )
+        col_save, col_cancel = st.columns([1, 4])
+        with col_save:
+            if st.button("💾 変更を保存", type="primary", width='stretch'):
+                try:
+                    n = _apply_changes(edited, show_df, editable_cols)
+                    if n == 0:
+                        st.info("変更はありませんでした。")
+                    else:
+                        st.success(f"✅ {n} セルを更新しました。")
+                        _load_bts_dataframe.clear()
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"保存に失敗しました: {type(e).__name__}: {e}")
+        with col_cancel:
+            st.caption(
+                "※ 列ヘッダをクリックすると並び替えできます。"
+                "編集後は必ず「変更を保存」を押してください。"
+            )
+        return
+
+    # ---- 閲覧モード ----
+    view_cols = display_cols
     st.dataframe(
-        show_df,
-        use_container_width=True,
+        show_df[view_cols],
+        width='stretch',
         hide_index=True,
         column_config={
             "項番": st.column_config.TextColumn("項番", width="small"),

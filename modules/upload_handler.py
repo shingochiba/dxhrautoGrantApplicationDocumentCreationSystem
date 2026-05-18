@@ -298,7 +298,7 @@ def render_upload_form() -> Optional[Dict[str, CurriculumGroup]]:
 
             # プレビュー表示
             st.subheader("データプレビュー")
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width='stretch')
 
             # バリデーション
             errors, participants = validate_participants(df)

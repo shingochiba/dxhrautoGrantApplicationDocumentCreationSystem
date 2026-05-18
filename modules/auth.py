@@ -88,7 +88,7 @@ def render_login_gate() -> bool:
             autocomplete="current-password"
         )
         clicked = st.form_submit_button(
-            "ログイン", type="primary", use_container_width=True
+            "ログイン", type="primary", width='stretch'
         )
 
     if clicked:

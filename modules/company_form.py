@@ -146,7 +146,7 @@ def render_company_form() -> Optional[CompanyInfo]:
             )
             st.dataframe(
                 _df_industry,
-                use_container_width=True,
+                width='stretch',
                 hide_index=True,
                 height=300,
             )
@@ -250,7 +250,7 @@ def render_company_form() -> Optional[CompanyInfo]:
         # 送信ボタン（form_submit_button で確実に送信）
         st.markdown("---")
         submit_clicked = st.form_submit_button(
-            "💾 保存して次へ", type="primary", use_container_width=True
+            "💾 保存して次へ", type="primary", width='stretch'
         )
 
     if not submit_clicked:
@@ -414,7 +414,7 @@ def render_sr_form() -> Optional[SocialInsuranceLabor]:
             )
 
         submit_clicked = st.form_submit_button(
-            "保存して次へ", type="primary", use_container_width=True
+            "保存して次へ", type="primary", width='stretch'
         )
 
     if not submit_clicked:
