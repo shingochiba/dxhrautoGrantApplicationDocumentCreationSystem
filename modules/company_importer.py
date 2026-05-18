@@ -227,30 +227,45 @@ def _build_insurance_number(p1: str, p2: str, p3: str) -> str:
 
 
 def _extract_offices(wb) -> List[Office]:
-    """②事業所情報シートから事業所リストを抽出"""
+    """②事業所情報シートから事業所リストを抽出。
+
+    シート構造:
+      - 行7: 申請事業所セクションのヘッダー (事業所名 / 雇用保険適用事業所番号 / 常時雇用する労働者数)
+      - 行8: 例の行 ("例）株式会社○○商事")
+      - 行9: 申請事業所の実データ行 ← ここを採用
+      - 行12: 従たる事業所セクションのヘッダー
+      - 行13: 例の行
+      - 行14〜22: 従たる事業所の実データ行 (最大9件)
+    """
     offices: List[Office] = []
     sheet_name = _find_sheet(wb, '事業所情報', '②')
     if not sheet_name:
         return offices
     ws = wb[sheet_name]
 
-    # 申請事業所 (行8)
-    name8 = _get(ws, 'B8')
-    if name8 and not _is_example_value(name8):
-        c8 = _get(ws, 'C8')
-        d8 = _get(ws, 'D8')
-        e8 = _get(ws, 'E8')
-        emp8 = _parse_int(ws['F8'].value)
-        offices.append(Office(
-            name=name8,
-            insurance_number=_build_insurance_number(c8, d8, e8),
-            employee_count=emp8,
-        ))
-
-    # 従たる事業所 (行13〜21の最大9件)
-    for row in range(13, 22):
+    # 申請事業所 (本社): 行9 が実データ。念のため 9 → 8 → 10 の順で探す
+    for row in (9, 8, 10):
         name = _get(ws, f'B{row}')
         if not name or _is_example_value(name):
+            continue
+        c = _get(ws, f'C{row}')
+        d = _get(ws, f'D{row}')
+        e = _get(ws, f'E{row}')
+        emp = _parse_int(ws[f'F{row}'].value)
+        offices.append(Office(
+            name=name,
+            insurance_number=_build_insurance_number(c, d, e),
+            employee_count=emp,
+        ))
+        break
+
+    # 従たる事業所 (行14〜21の最大8件、行13は例、行22は合計欄ラベル)
+    for row in range(14, 22):
+        name = _get(ws, f'B{row}')
+        if not name or _is_example_value(name):
+            continue
+        # 案内文 (「→」「合計」等を含む長い文字列) はスキップ
+        if '→' in name or '合計' in name or len(name) > 60:
             continue
         c = _get(ws, f'C{row}')
         d = _get(ws, f'D{row}')
