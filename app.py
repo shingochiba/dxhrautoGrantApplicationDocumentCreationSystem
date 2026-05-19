@@ -497,7 +497,7 @@ def render_step5():
                             if "3-2" in n: marker = "  ← 様式3-2号(定額制)"
                             elif "3-1" in n: marker = "  ← 様式3-1号(通常)"
                             elif "14-1" in n: marker = "  ← 様式14-1号(定額制)"
-                            elif "6-3" in n: marker = "  ← 様式6-3号(定額制)"
+                            elif "6-3" in n: marker = "  ← 様式6-3号(定額制) ※未生成（テンプレートのまま）"
                             elif "_定額制" in n: marker = "  ← 定額制版"
                             st.text(f"  • {n}{marker}")
                 except Exception:

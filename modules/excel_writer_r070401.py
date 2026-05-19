@@ -401,49 +401,25 @@ class ExcelWriterR070401(ExcelWriter):
         )
 
     def write_経費助成内訳_定額制(self, company: CompanyInfo, group: CurriculumGroup) -> str:
-        """06_様式第6-3号 ※定額制 定額制サービスによる訓練に関する経費助成の内訳（R070401 新規）
+        """06_様式第6-3号 ※定額制 定額制サービスによる訓練に関する経費助成の内訳（R070401）
 
-        定額制ケース用。様式6-2号 の代わりに使用する。
-        マージセル分析で特定したデータ位置:
-          - 訓練コース名 (3) → AG6
-          - 助成対象労働者数 (4) → J7
-          - 契約者数（総受講者数）(5) → AG7
-          - 訓練の実施期間 始日 (6) → M8/R8/W8 (年/月/日)
-          - 訓練の実施期間 終日 (6) → AF8/AK8/AP8 (年/月/日)
-          - 契約期間 (7) → M9/R9/W9, AF9/AK9/AP9 (6欄と同じ日付)
-          - 基本利用料 (8欄(1)①) → AB13 = 単価 × 契約者数
-        日付欄はプルダウンに合わせて月/日を2桁ゼロ詰め文字列で書き込む。
+        定額制ケース用。自動入力は行わず、未入力の書式 (空欄) として出力する。
+        テンプレートに残ったサンプル値も空欄にクリアして提供する。
+        ファイル名に「未生成」を含めることでユーザーに手入力を促す。
         """
         values = {
-            # 3 訓練コース名
-            'AG6': group.curriculum_name,
-            # 4 助成対象労働者数
-            'J7': len(group.participants),
-            # 5 契約者数（総受講者数）
-            'AG7': len(group.participants),
+            'AG6': '',
+            'J7': '', 'AG7': '',
+            'M8': '', 'R8': '', 'W8': '',
+            'AF8': '', 'AK8': '', 'AP8': '',
+            'M9': '', 'R9': '', 'W9': '',
+            'AF9': '', 'AK9': '', 'AP9': '',
+            'AB13': '',
         }
-        # 6 訓練の実施期間 と 7 契約期間 (同じ日付を入れる)
-        if group.start_date:
-            sy = str(group.start_date.year)
-            sm = f"{group.start_date.month:02d}"
-            sd = f"{group.start_date.day:02d}"
-            values['M8'] = sy; values['R8'] = sm; values['W8'] = sd
-            values['M9'] = sy; values['R9'] = sm; values['W9'] = sd
-        if group.end_date:
-            ey = str(group.end_date.year)
-            em = f"{group.end_date.month:02d}"
-            ed = f"{group.end_date.day:02d}"
-            values['AF8'] = ey; values['AK8'] = em; values['AP8'] = ed
-            values['AF9'] = ey; values['AK9'] = em; values['AP9'] = ed
-        # 8欄(1)① 基本利用料 = 単価 × 契約者数
-        if group.participants:
-            unit_price = group.participants[0].tuition_fee or 0
-            values['AB13'] = int(round(unit_price * len(group.participants)))
-
-        fname = f"06_様式6-3号_{group.curriculum_name}_{company.company_name}.xlsx"
+        fname = f"06_様式6-3号_未生成_{group.curriculum_name}_{company.company_name}.xlsx"
         return self._patch(
             "支給申請/06_定額制サービスによる訓練に関する経費助成の内訳(様式第6-3号)※定額制.xlsx",
-            fname, values
+            fname, values,
         )
 
     def write_対象者一覧_支給(self, company: CompanyInfo, group: CurriculumGroup) -> str:
