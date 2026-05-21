@@ -406,6 +406,8 @@ class ExcelWriterR80302(ExcelWriter):
            正しい様式5号テンプレートに差し替えてください。
         """
         values = {
+            # 受付番号 (P7) は労働局から付与される番号なので明示的に空欄
+            'P7': '',
             'BA7': get_insurance_office_name(company),
         }
         start_row = 22
