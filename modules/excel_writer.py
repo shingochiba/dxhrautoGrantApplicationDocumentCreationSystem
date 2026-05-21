@@ -376,7 +376,7 @@ class ExcelWriter:
           - データ行: row 21 から開始（row 20 は記入例）
           - B: 番号(自動採番), C: 氏名, D: フリガナ, E: 雇用保険番号(11桁),
             F: 性別, G: 生年月日, H: 取得日, I: 訓練コース名,
-            J: 雇用形態, K: 採用予定日, L: 属性, M: 所属事業主名
+            J: 雇用形態, K: 採用予定日, L: 属性, M: 所属事業主名 (※自動入力対象外)
         """
         insurance_office_name = get_insurance_office_name(company)
         # 保険番号を 11桁ハイフン区切り文字列で正規化
@@ -400,8 +400,7 @@ class ExcelWriter:
             # G: 生年月日, H: 取得日 → 未取得のため空
             values[f'I{r}'] = group.curriculum_name
             values[f'J{r}'] = p.employment_type
-            # K: 採用予定日, L: 属性 → 未取得のため空
-            values[f'M{r}'] = getattr(p, 'office_name', '')
+            # K: 採用予定日, L: 属性, M: 所属事業所 → 自動入力対象外 (手動入力)
 
         fname = f"03_対象者一覧(電子申請)_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch(
