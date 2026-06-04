@@ -172,6 +172,22 @@ def render_company_form() -> Optional[CompanyInfo]:
         st.session_state['_employee_count'] = 1
 
     # st.form で囲むことで、送信ボタン押下時だけ rerun する（入力中の rerun と
+    # 申請事業所(本社) の情報が未取り込みの場合は注意喚起
+    # (各書式の「雇用保険適用事業所名」欄は 会社情報シート ②事業所情報 B9 を反映するため、
+    #  シートをインポートしないと該当欄が空欄になる)
+    existing_company = st.session_state.get('company_info')
+    has_offices = bool(getattr(existing_company, 'offices', None)) or bool(
+        st.session_state.get('_imported_offices')
+    )
+    if not has_offices:
+        st.warning(
+            "⚠️ **事業所情報が未取り込みです。**\n\n"
+            "各書式 (様式4-2 / 様式5 / 様式6-2 / 様式11 等) の「雇用保険適用事業所名」欄は、"
+            "**会社情報シートの ②事業所情報シート → 申請事業所 → 事業所名 (B9)** から自動転記されます。\n\n"
+            "上の **「📂 会社情報シートから一括読み込み」** を開いて、"
+            "シートをアップロードしてください (再アップロード可)。"
+        )
+
     # 送信クリックの取りこぼしを防ぐ。Streamlit Cloud 環境で必須）
     with st.form("company_info_form", clear_on_submit=False):
         col1, col2 = st.columns(2)

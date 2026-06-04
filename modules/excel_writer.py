@@ -63,14 +63,16 @@ def labor_bureau_short(bureau: str) -> str:
 
 def get_insurance_office_name(company) -> str:
     """雇用保険適用事業所の名称を取得。
-    offices[0].name があればそれを優先、なければ company.company_name を返す。
-    （会社名と保険適用事業所名が異なる場合への対応：個人事業主が UNISYS幸手 のような
-      事業所名を持つケースなど）
+
+    会社情報シート ②事業所情報シート B9 (申請事業所/事業所名) を反映する。
+    具体的には offices[0].name の値を返す。これが空のときは空文字を返す
+    (会社名へのフォールバックは行わない — 様式4-2/5/6-2/11/13 等で
+     会社名ではなく事業所名を明示的に反映する仕様)。
     """
     offices = getattr(company, 'offices', None) or []
     if offices and offices[0].name:
         return offices[0].name
-    return company.company_name
+    return ""  # offices 未設定の場合は空欄 (会社名へのフォールバックはしない)
 
 
 def get_4_2_teigaku_checkboxes(subsidy_course: str) -> Dict[int, bool]:
@@ -408,20 +410,41 @@ class ExcelWriter:
             fname, values,
         )
 
-    def write_対象者一覧_3_2(self, company: CompanyInfo, group: CurriculumGroup) -> str:
+    def write_対象者一覧_3_2(self, company: CompanyInfo, group: CurriculumGroup,
+                              submit_date: datetime = None) -> str:
         """03_対象者一覧(様式第3-2号) 定額制用
 
         テンプレート列構造:
           A: 番号（自動採番済み）, B: 氏名, C-F(merged): 正規雇用マーク, G-J(merged): 有期契約マーク
         ※ このフォームには保険番号欄は無い
         """
+        if submit_date is None:
+            from datetime import datetime as _dt
+            submit_date = _dt.now()
+        rep = f"{company.representative_title}\u3000{company.representative_name}".strip()
+        cert_text = f"{company.address}\n{rep}"
         values = {
+            # 申請事業主の証明 - 日付
+            'E8': submit_date.year,
+            'G8': submit_date.month,
+            'I8': "",
+            # 申請事業主の証明 - 所在地（改行）代表者名
+            'E9': cert_text,
+            # 本紙ヘッダー
             'C11': company.company_name,
             'C12': group.curriculum_name,
+            # 継紙ヘッダー (項目21人目以降がある場合のみ意味があるが、常に書いても問題ない)
+            'C50': company.company_name,
+            'C51': group.curriculum_name,
         }
-        start_row = 16
-        for idx, p in enumerate(group.participants):
-            r = start_row + idx
+        # 受講者の配置:
+        #   本紙 (1〜20人目): 行16,17,...,35
+        #   継紙 (21〜40人目): 行55,56,...,74
+        for idx, p in enumerate(group.participants[:40]):
+            if idx < 20:
+                r = 16 + idx
+            else:
+                r = 55 + (idx - 20)
             # A{r} は事前採番済みなのでスキップ。B{r} に氏名。
             values[f'B{r}'] = p.name
             # 雇用形態に応じてマーク列を選択（C=正規雇用、G=有期契約）
@@ -691,7 +714,7 @@ class ExcelWriter:
             ("事業展開等実施計画", lambda: self.write_事業展開等実施計画(company, group, submit_date)),
         ]
         if teigaku:
-            jobs.append(("対象者一覧(3-2定額制)", lambda: self.write_対象者一覧_3_2(company, group)))
+            jobs.append(("対象者一覧(3-2定額制)", lambda: self.write_対象者一覧_3_2(company, group, submit_date)))
         else:
             jobs.append(("対象者一覧(3-1)", lambda: self.write_対象者一覧_3_1(company, group)))
         # 様式第3号 (※電子申請のみ) - 常に追加生成

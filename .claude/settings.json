@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _inspect_3_2.py)",
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _test_3_2_continuation.py)",
+      "Bash(rm -f .git/index.lock && echo \"✓ index.lock を削除しました\" && git status 2>&1 | head -30)"
+    ],
+    "additionalDirectories": [
+      "C:\\Users\\chiba\\OneDrive - アグリホールディングス株式会社\\デスクトップ\\document_generator_new\\.git"
+    ]
+  }
+}

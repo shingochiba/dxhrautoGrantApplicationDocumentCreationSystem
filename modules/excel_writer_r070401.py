@@ -201,18 +201,34 @@ class ExcelWriterR070401(ExcelWriter):
             fname
         )
 
-    def write_対象者一覧_3_2(self, company: CompanyInfo, group: CurriculumGroup) -> str:
+    def write_対象者一覧_3_2(self, company: CompanyInfo, group: CurriculumGroup,
+                              submit_date: datetime = None) -> str:
         """03_対象労働者一覧(様式第3-2号)定額制 - R070401版
 
         列構造: A=番号(自動), B=氏名, C-F(merged)=正規雇用マーク, G-J(merged)=有期契約マーク
         """
+        if submit_date is None:
+            from datetime import datetime as _dt
+            submit_date = _dt.now()
+        rep = f"{company.representative_title}　{company.representative_name}".strip()
+        cert_text = f"{company.address}\n{rep}"
         values = {
+            # 申請事業主の証明 - 日付
+            'E8': submit_date.year,
+            'G8': submit_date.month,
+            'I8': "",
+            # 申請事業主の証明 - 所在地（改行）代表者名
+            'E9': cert_text,
+            # 本紙ヘッダー
             'C11': company.company_name,
             'C12': group.curriculum_name,
+            # 継紙ヘッダー
+            'C50': company.company_name,
+            'C51': group.curriculum_name,
         }
-        start_row = 16
-        for idx, p in enumerate(group.participants):
-            r = start_row + idx
+        # 本紙 (1〜20人目): 行16〜35 / 継紙 (21〜40人目): 行55〜74
+        for idx, p in enumerate(group.participants[:40]):
+            r = (16 + idx) if idx < 20 else (55 + (idx - 20))
             values[f'B{r}'] = p.name
             if '正規' in p.employment_type:
                 values[f'C{r}'] = '○'
@@ -520,7 +536,7 @@ class ExcelWriterR070401(ExcelWriter):
             ("事業展開等実施計画", lambda: self.write_事業展開等実施計画(company, group, submit_date)),
         ]
         if teigaku:
-            jobs.append(("対象者一覧(3-2定額制)", lambda: self.write_対象者一覧_3_2(company, group)))
+            jobs.append(("対象者一覧(3-2定額制)", lambda: self.write_対象者一覧_3_2(company, group, submit_date)))
         else:
             jobs.append(("対象者一覧(3-1)", lambda: self.write_対象者一覧_3_1(company, group)))
         jobs.append(("事前確認書",

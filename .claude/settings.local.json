@@ -6,7 +6,10 @@
       "Edit",
       "Bash",
       "WebFetch",
-      "WebSearch"
+      "WebSearch",
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _test_4_2_b9.py)",
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python -c \"import ast; [ast.parse\\(open\\(p, encoding='utf-8'\\).read\\(\\)\\) for p in ['modules/excel_writer.py','modules/company_form.py']]; print\\('OK'\\)\")",
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _inspect_3_2.py)"
     ]
   }
 }
