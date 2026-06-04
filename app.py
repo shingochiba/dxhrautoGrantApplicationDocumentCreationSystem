@@ -335,6 +335,34 @@ def render_step4():
             "テンプレートファイル一式をZIPで出力します（中身は手動で入力してください）。"
         )
 
+    # 教育訓練機関 (研修実施会社) の選択
+    st.subheader("教育訓練機関 (研修実施会社)")
+    from modules.storage import load_training_company_master
+    tc_master = load_training_company_master()
+    if tc_master:
+        tc_names = [tc.name for tc in tc_master]
+        if '_training_company_idx' not in st.session_state:
+            st.session_state['_training_company_idx'] = 0
+        tc_idx = st.selectbox(
+            "研修実施会社を選択",
+            options=list(range(len(tc_names))),
+            format_func=lambda i: tc_names[i],
+            key="_training_company_idx",
+            help="様式1-1号（16欄）および 様式12号の教育訓練機関欄に反映されます",
+        )
+        selected_tc = tc_master[tc_idx]
+        with st.expander(f"📋 {selected_tc.name} の情報", expanded=False):
+            st.markdown(
+                f"- **法人名**: {selected_tc.name}\n"
+                f"- **所在地**: {selected_tc.address}\n"
+                f"- **代表者**: {selected_tc.representative_title} {selected_tc.representative_name}\n"
+                f"- **法人番号**: {selected_tc.corporate_number or '(未登録)'}"
+            )
+        st.session_state['training_company'] = selected_tc
+    else:
+        st.info("研修実施会社のマスタが未設定です。`config/training_company_master.json` を確認してください。")
+        st.session_state['training_company'] = None
+
     # widget のデフォルト値を session_state に初期化 (初回のみ、戻る対応)
     if '_generate_plan' not in st.session_state:
         st.session_state['_generate_plan'] = True
@@ -458,6 +486,7 @@ def render_step5():
                         selected_curricula=[curriculum_key],
                         submit_date=submit_date,
                         format_id=format_id,
+                        training_company=st.session_state.get('training_company'),
                     )
                     generated_files.update(result)
 

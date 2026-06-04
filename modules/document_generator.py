@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 import tempfile
 
-from .company_form import CompanyInfo, SocialInsuranceLabor
+from .company_form import CompanyInfo, SocialInsuranceLabor, TrainingCompany
 from .upload_handler import CurriculumGroup
 from .excel_writer import ExcelWriter
 from .excel_writer_r80302 import ExcelWriterR80302
@@ -58,7 +58,8 @@ class DocumentGenerator:
                           generate_payment: bool = True,
                           selected_curricula: Optional[List[str]] = None,
                           submit_date: Optional[datetime] = None,
-                          format_id: str = "current") -> Dict[str, str]:
+                          format_id: str = "current",
+                          training_company: Optional[TrainingCompany] = None) -> Dict[str, str]:
         """
         書類を生成してZIPファイルを作成
 
@@ -114,7 +115,8 @@ class DocumentGenerator:
                             format_id, str(format_template_dir), str(plan_dir)
                         )
                         plan_files = excel_writer.generate_plan_documents(
-                            company, sr, group, submit_date
+                            company, sr, group, submit_date,
+                            training_company=training_company,
                         )
                         generated_files.extend(plan_files)
 
@@ -142,7 +144,8 @@ class DocumentGenerator:
                             format_id, str(format_template_dir), str(payment_dir)
                         )
                         payment_files = excel_writer.generate_payment_documents(
-                            company, sr, group, submit_date
+                            company, sr, group, submit_date,
+                            training_company=training_company,
                         )
                         generated_files.extend(payment_files)
                     else:

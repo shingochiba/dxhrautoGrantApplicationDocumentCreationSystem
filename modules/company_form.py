@@ -43,6 +43,18 @@ class SocialInsuranceLabor:
     phone_number: str = ""          # 電話番号
 
 
+@dataclass
+class TrainingCompany:
+    """教育訓練機関 (研修実施会社) を保持するデータクラス。
+    様式1-1号 16欄、様式12号 教育訓練機関欄に反映される。
+    """
+    name: str = ""                   # 法人名 (例: GAID株式会社)
+    address: str = ""                # 所在地
+    representative_title: str = "代表取締役"  # 代表者役職
+    representative_name: str = ""    # 代表者氏名
+    corporate_number: str = ""       # 法人番号 (任意)
+
+
 # 都道府県の労働局リスト
 LABOR_BUREAUS = [
     "北海道労働局", "青森労働局", "岩手労働局", "宮城労働局", "秋田労働局",

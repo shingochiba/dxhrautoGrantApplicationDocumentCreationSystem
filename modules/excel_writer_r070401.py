@@ -47,7 +47,8 @@ class ExcelWriterR070401(ExcelWriter):
     # ==================================================================
 
     def write_訓練実施計画届(self, company: CompanyInfo, sr: SocialInsuranceLabor,
-                              group: CurriculumGroup, submit_date: datetime) -> str:
+                              group: CurriculumGroup, submit_date: datetime,
+                              training_company=None) -> str:
         """01_職業訓練実施計画届(様式第1-1号) - R070401版
 
         現行との差分:
@@ -143,6 +144,13 @@ class ExcelWriterR070401(ExcelWriter):
         checkbox_states = get_training_method_checkboxes(group.subsidy_course)
         # 17 デジタル人材の育成 (R070401 は ctrlProp26〜31)
         checkbox_states.update(get_digital_training_checkboxes(group.curriculum_name, base_ctrl=26))
+
+        # 16欄 教育訓練機関 (R070401: 名称 R61, 代表者 AM61, 所在地 R62)
+        if training_company is not None:
+            rep_full = f"{training_company.representative_title}　{training_company.representative_name}".strip()
+            values['R61'] = training_company.name
+            values['AM61'] = rep_full
+            values['R62'] = training_company.address
 
         fname = f"01_職業訓練実施計画届_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch(
@@ -521,7 +529,8 @@ class ExcelWriterR070401(ExcelWriter):
     # ==================================================================
 
     def generate_plan_documents(self, company: CompanyInfo, sr: SocialInsuranceLabor,
-                                 group: CurriculumGroup, submit_date: datetime) -> List[str]:
+                                 group: CurriculumGroup, submit_date: datetime,
+                                 training_company=None) -> List[str]:
         """計画申請書類の一括生成（R070401）
 
         現行との差分:
@@ -532,7 +541,8 @@ class ExcelWriterR070401(ExcelWriter):
         teigaku = is_teigaku_course(group.subsidy_course)
 
         jobs = [
-            ("計画届", lambda: self.write_訓練実施計画届(company, sr, group, submit_date)),
+            ("計画届", lambda: self.write_訓練実施計画届(company, sr, group, submit_date,
+                                                       training_company=training_company)),
             ("事業展開等実施計画", lambda: self.write_事業展開等実施計画(company, group, submit_date)),
         ]
         if teigaku:
@@ -554,7 +564,8 @@ class ExcelWriterR070401(ExcelWriter):
         return generated
 
     def generate_payment_documents(self, company: CompanyInfo, sr: SocialInsuranceLabor,
-                                    group: CurriculumGroup, submit_date: datetime) -> List[str]:
+                                    group: CurriculumGroup, submit_date: datetime,
+                                    training_company=None) -> List[str]:
         """支給申請書類の一括生成（R070401）
 
         現行との差分:

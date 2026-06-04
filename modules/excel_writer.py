@@ -215,8 +215,13 @@ class ExcelWriter:
     # ==================================================================
 
     def write_訓練実施計画届(self, company: CompanyInfo, sr: SocialInsuranceLabor,
-                              group: CurriculumGroup, submit_date: datetime) -> str:
-        """01_職業訓練実施計画届(様式第1-1号)"""
+                              group: CurriculumGroup, submit_date: datetime,
+                              training_company=None) -> str:
+        """01_職業訓練実施計画届(様式第1-1号)
+
+        Args:
+            training_company: 教育訓練機関 (16欄)。指定があれば R66/AM66/R67 に書き込む。
+        """
         p1, p2 = split_postal(company.postal_code)
         sp1, sp2 = split_postal(sr.postal_code) if sr else ("", "")
         cp1, cp2, cp3 = split_phone(company.phone_number)
@@ -277,6 +282,12 @@ class ExcelWriter:
             # 男女別受講者数
             'S80': male, 'AN80': female,
         }
+        # 16欄 教育訓練機関 (training_company が指定された場合のみ上書き)
+        if training_company is not None:
+            rep_full = f"{training_company.representative_title}　{training_company.representative_name}".strip()
+            values['R66'] = training_company.name
+            values['AM66'] = rep_full
+            values['R67'] = training_company.address
         if group.start_date:
             values['N43'] = group.start_date.year
             values['T43'] = group.start_date.month
@@ -671,11 +682,13 @@ class ExcelWriter:
         return self._patch("支給申請/05_事業所確認票(様式第13号).xlsx", fname, values)
 
     def write_支給申請承諾書(self, company: CompanyInfo, group: CurriculumGroup,
-                            submit_date: datetime) -> str:
+                            submit_date: datetime, training_company=None) -> str:
         """41_支給申請承諾書(様式第12号)
         対象訓練欄 (1件目のみ): F40=コース名, S40/W40/Y40=開始 年/月/日,
                                S42/W42/Y42=終了 年/月/日
         申請事業主欄: E51=所在地, E53=名称, E55=氏名
+        教育訓練機関欄 (training_company が指定された場合):
+          F26: 所在地, F28: 名称, P30: 代表者氏名, F32: 法人番号
         """
         values = {
             # 確認日
@@ -696,6 +709,12 @@ class ExcelWriter:
             values['S42'] = group.end_date.year
             values['W42'] = group.end_date.month
             values['Y42'] = group.end_date.day
+        # 教育訓練機関 (training_company が指定された場合のみ上書き)
+        if training_company is not None:
+            values['F26'] = training_company.address
+            values['F28'] = training_company.name
+            values['P30'] = training_company.representative_name
+            values['F32'] = training_company.corporate_number
 
         fname = f"41_支給申請承諾書_{group.curriculum_name}_{company.company_name}.xlsx"
         return self._patch("支給申請/41_支給申請承諾書(様式第12号).xlsx", fname, values)
@@ -705,12 +724,14 @@ class ExcelWriter:
     # ==================================================================
 
     def generate_plan_documents(self, company: CompanyInfo, sr: SocialInsuranceLabor,
-                                 group: CurriculumGroup, submit_date: datetime) -> List[str]:
+                                 group: CurriculumGroup, submit_date: datetime,
+                                 training_company=None) -> List[str]:
         generated = []
         teigaku = is_teigaku_course(group.subsidy_course)
 
         jobs = [
-            ("計画届", lambda: self.write_訓練実施計画届(company, sr, group, submit_date)),
+            ("計画届", lambda: self.write_訓練実施計画届(company, sr, group, submit_date,
+                                                       training_company=training_company)),
             ("事業展開等実施計画", lambda: self.write_事業展開等実施計画(company, group, submit_date)),
         ]
         if teigaku:
@@ -733,7 +754,8 @@ class ExcelWriter:
         return generated
 
     def generate_payment_documents(self, company: CompanyInfo, sr: SocialInsuranceLabor,
-                                    group: CurriculumGroup, submit_date: datetime) -> List[str]:
+                                    group: CurriculumGroup, submit_date: datetime,
+                                    training_company=None) -> List[str]:
         generated = []
         teigaku = is_teigaku_course(group.subsidy_course)
 
@@ -750,7 +772,8 @@ class ExcelWriter:
         jobs.extend([
             ("賃金助成内訳", lambda: self.write_賃金助成内訳(company, group)),
             ("事業所確認票", lambda: self.write_事業所確認票(company, group, submit_date)),
-            ("支給申請承諾書", lambda: self.write_支給申請承諾書(company, group, submit_date)),
+            ("支給申請承諾書", lambda: self.write_支給申請承諾書(company, group, submit_date,
+                                                              training_company=training_company)),
         ])
         for label, fn in jobs:
             try:

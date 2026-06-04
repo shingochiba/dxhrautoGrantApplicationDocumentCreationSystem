@@ -9,7 +9,7 @@ from dataclasses import asdict, fields
 from pathlib import Path
 from typing import List, Optional
 
-from .company_form import CompanyInfo, SocialInsuranceLabor, Office
+from .company_form import CompanyInfo, SocialInsuranceLabor, Office, TrainingCompany
 from . import auth
 
 
@@ -20,6 +20,7 @@ _STORAGE_DIR = _BASE_DIR / "data"
 _CONFIG_DIR = _BASE_DIR / "config"
 _SR_MASTER_FILE = _CONFIG_DIR / "sr_master.json"
 _INDUSTRY_CODES_FILE = _CONFIG_DIR / "industry_codes.json"
+_TRAINING_COMPANY_MASTER_FILE = _CONFIG_DIR / "training_company_master.json"
 
 
 def _get_storage_file() -> Path:
@@ -134,6 +135,26 @@ def load_sr_master() -> List[SocialInsuranceLabor]:
         for item in raw_list:
             if isinstance(item, dict):
                 result.append(SocialInsuranceLabor(**_filter_fields(item, SocialInsuranceLabor)))
+        return result
+    except (json.JSONDecodeError, OSError, TypeError):
+        return []
+
+
+def load_training_company_master() -> List[TrainingCompany]:
+    """教育訓練機関 (研修実施会社) のマスタを config/training_company_master.json から読み込む。
+    ファイルが無い・壊れている場合は空リストを返す。
+    """
+    if not _TRAINING_COMPANY_MASTER_FILE.exists():
+        return []
+    try:
+        with _TRAINING_COMPANY_MASTER_FILE.open("r", encoding="utf-8") as f:
+            raw_list = json.load(f)
+        if not isinstance(raw_list, list):
+            return []
+        result: List[TrainingCompany] = []
+        for item in raw_list:
+            if isinstance(item, dict):
+                result.append(TrainingCompany(**_filter_fields(item, TrainingCompany)))
         return result
     except (json.JSONDecodeError, OSError, TypeError):
         return []

@@ -31,10 +31,12 @@ class ExcelWriterR80302(ExcelWriter):
     # ==================================================================
 
     def write_訓練実施計画届(self, company: CompanyInfo, sr: SocialInsuranceLabor,
-                              group: CurriculumGroup, submit_date: datetime) -> str:
+                              group: CurriculumGroup, submit_date: datetime,
+                              training_company=None) -> str:
         """01_職業訓練実施計画届(様式第1-1号) - R80302版
 
         現行との差分: 男女別受講者数が S80/AN80 → S74/AN74 に移動
+        16欄 教育訓練機関: 名称 R62, 代表者 AM62, 所在地 R63 (R070401 から +1 行ずれ)
         """
         p1, p2 = split_postal(company.postal_code)
         sp1, sp2 = split_postal(sr.postal_code) if sr else ("", "")
@@ -123,6 +125,13 @@ class ExcelWriterR80302(ExcelWriter):
         checkbox_states = get_training_method_checkboxes(group.subsidy_course)
         # 17 デジタル人材の育成 (R80302 は ctrlProp24〜29、現行と同じ)
         checkbox_states.update(get_digital_training_checkboxes(group.curriculum_name, base_ctrl=24))
+
+        # 16欄 教育訓練機関 (R80302: 名称 R62, 代表者 AM62, 所在地 R63)
+        if training_company is not None:
+            rep_full = f"{training_company.representative_title}　{training_company.representative_name}".strip()
+            values['R62'] = training_company.name
+            values['AM62'] = rep_full
+            values['R63'] = training_company.address
 
         fname = f"01_職業訓練実施計画届_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch(
@@ -537,12 +546,11 @@ class ExcelWriterR80302(ExcelWriter):
         )
 
     def write_支給申請承諾書(self, company: CompanyInfo, group: CurriculumGroup,
-                              submit_date: datetime) -> str:
+                              submit_date: datetime, training_company=None) -> str:
         """04_支給申請承諾書(様式第12号) - R80302版（セル位置は現行と同じ）
 
-        注意: 教育訓練機関のセル（F26: 所在地, F28: 名称, P30: 代表者氏名, F32: 法人番号）は
-              テンプレートに埋め込む形で運用する想定（現行も同じパターン）。
-              フォームから書き込む対象は 申請事業主・確認日・対象訓練のみ。
+        教育訓練機関欄 (training_company が指定された場合):
+          F26: 所在地, F28: 名称, P30: 代表者氏名, F32: 法人番号
         """
         values = {
             # 確認日
@@ -562,6 +570,12 @@ class ExcelWriterR80302(ExcelWriter):
             values['S42'] = group.end_date.year
             values['W42'] = group.end_date.month
             values['Y42'] = group.end_date.day
+        # 教育訓練機関 (training_company が指定された場合のみ上書き)
+        if training_company is not None:
+            values['F26'] = training_company.address
+            values['F28'] = training_company.name
+            values['P30'] = training_company.representative_name
+            values['F32'] = training_company.corporate_number
 
         fname = f"04_支給申請承諾書_{group.curriculum_name}_{company.company_name}.xlsx"
         return self._patch(
@@ -574,7 +588,8 @@ class ExcelWriterR80302(ExcelWriter):
     # ==================================================================
 
     def generate_plan_documents(self, company: CompanyInfo, sr: SocialInsuranceLabor,
-                                 group: CurriculumGroup, submit_date: datetime) -> List[str]:
+                                 group: CurriculumGroup, submit_date: datetime,
+                                 training_company=None) -> List[str]:
         """計画申請書類の一括生成（R80302）
 
         現行との差分:
@@ -585,7 +600,8 @@ class ExcelWriterR80302(ExcelWriter):
         teigaku = is_teigaku_course(group.subsidy_course)
 
         jobs = [
-            ("計画届", lambda: self.write_訓練実施計画届(company, sr, group, submit_date)),
+            ("計画届", lambda: self.write_訓練実施計画届(company, sr, group, submit_date,
+                                                       training_company=training_company)),
             ("事業展開等実施計画", lambda: self.write_事業展開等実施計画(company, group, submit_date)),
         ]
         if teigaku:
@@ -607,7 +623,8 @@ class ExcelWriterR80302(ExcelWriter):
         return generated
 
     def generate_payment_documents(self, company: CompanyInfo, sr: SocialInsuranceLabor,
-                                    group: CurriculumGroup, submit_date: datetime) -> List[str]:
+                                    group: CurriculumGroup, submit_date: datetime,
+                                    training_company=None) -> List[str]:
         """支給申請書類の一括生成（R80302）
 
         最新の支給申請フォルダ構成:
@@ -634,7 +651,8 @@ class ExcelWriterR80302(ExcelWriter):
                          lambda: self.write_経費助成内訳(company, group)))
         jobs.extend([
             ("賃金助成内訳", lambda: self.write_賃金助成内訳(company, group)),
-            ("支給申請承諾書", lambda: self.write_支給申請承諾書(company, group, submit_date)),
+            ("支給申請承諾書", lambda: self.write_支給申請承諾書(company, group, submit_date,
+                                                              training_company=training_company)),
             ("事業所確認票", lambda: self.write_事業所確認票(company, group, submit_date)),
         ])
         for label, fn in jobs:
