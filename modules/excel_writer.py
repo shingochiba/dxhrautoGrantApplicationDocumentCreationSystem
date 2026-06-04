@@ -75,6 +75,32 @@ def get_insurance_office_name(company) -> str:
     return ""  # offices 未設定の場合は空欄 (会社名へのフォールバックはしない)
 
 
+# 1書式 (本紙+継紙) に収容できる最大人数。これを超える場合は分割書式 ①②... を生成する
+_PARTICIPANTS_PER_FORM = 40
+
+# 分割書式のサフィックス文字
+_CIRCLED_NUMBERS = "①②③④⑤⑥⑦⑧⑨⑩⑪⑫⑬⑭⑮"
+
+
+def chunk_participants(participants, chunk_size: int = _PARTICIPANTS_PER_FORM):
+    """受講者リストを chunk_size ずつのチャンクに分割して返す。
+    1つも要素が無い場合は単一の空チャンク [[]] を返す (テンプレートを最低1枚は出力するため)。
+    """
+    if not participants:
+        return [[]]
+    return [participants[i:i + chunk_size] for i in range(0, len(participants), chunk_size)]
+
+
+def chunk_suffix(chunk_idx: int, total_chunks: int) -> str:
+    """チャンク番号からファイル名のサフィックスを返す。
+    分割が1チャンクのみなら空文字、複数なら ① ② ... を返す。"""
+    if total_chunks <= 1:
+        return ""
+    if chunk_idx < len(_CIRCLED_NUMBERS):
+        return _CIRCLED_NUMBERS[chunk_idx]
+    return f"({chunk_idx + 1})"
+
+
 def get_4_2_teigaku_checkboxes(subsidy_course: str) -> Dict[int, bool]:
     """様式4-2号（支給申請書）の定額制契約途中解約禁止チェックボックス
 
@@ -338,47 +364,62 @@ class ExcelWriter:
         fname = f"02_事業展開等実施計画_{company.company_name}_{group.curriculum_name}.xlsx"
         return self._patch("計画申請/02_事業展開等実施計画(様式第1-3号).xlsx", fname, values)
 
-    def write_対象者一覧_3_1(self, company: CompanyInfo, group: CurriculumGroup) -> str:
+    def write_対象者一覧_3_1(self, company: CompanyInfo, group: CurriculumGroup) -> List[str]:
         """03_対象者一覧(様式第3-1号) 通常用
         列構成: A=No(pre-filled), B=氏名, C=被保険者番号4桁, F=6桁, I=1桁,
                J=雇用形態(チェックボックス), L=採用予定日, S=対象労働者属性
         受講者1件につき2行使用。
-          [本紙]  1〜20人目: 行13,15,...,51
-          [継紙] 21〜40人目: 行68,70,...,106 + ヘッダー C63/C64 にも会社名・コース名を転記
+          [本紙]  本書式の1〜20人目: 行13,15,...,51
+          [継紙] 本書式の21〜40人目: 行68,70,...,106 + ヘッダー C63/C64 にも会社名・コース名を転記
         雇用形態のチェックボックスは employment_type から自動チェック。
+
+        41人を超える場合は書式を分割 (1書式=最大40名) し、ファイル名に ①②... のサフィックスを付与。
+        各書式の A列「No.」には全体の通し番号 (1, 2, ..., 41, 42, ...) を上書きする。
+
+        Returns:
+            生成ファイルパスのリスト (人数によって 1 〜 N 件)。
         """
-        values = {
-            'C8': company.company_name,
-            'C9': group.curriculum_name,
-            # 継紙ヘッダー (項目21人目以降がある場合のみ意味があるが、常に書いても問題ない)
-            'C63': company.company_name,
-            'C64': group.curriculum_name,
-        }
-        for idx, p in enumerate(group.participants[:40]):
-            if idx < 20:
-                # 本紙: 1〜20人目 → 行13,15,...,51
-                r = 13 + idx * 2
-            else:
-                # 継紙: 21〜40人目 → 行68,70,...,106
-                r = 68 + (idx - 20) * 2
-            # B列 (B{r}:B{r+1} merged): 氏名
-            values[f'B{r}'] = p.name
-            # 雇用保険被保険者番号: C(4桁) / F(6桁) / I(1桁)
-            parts = (p.insurance_number or "").replace('−', '-').replace('ー', '-').split('-')
-            if len(parts) == 3:
-                values[f'C{r}'] = parts[0]
-                values[f'F{r}'] = parts[1]
-                values[f'I{r}'] = parts[2]
+        chunks = chunk_participants(group.participants, _PARTICIPANTS_PER_FORM)
+        output_paths: List[str] = []
+        for chunk_idx, chunk in enumerate(chunks):
+            offset = chunk_idx * _PARTICIPANTS_PER_FORM  # 0, 40, 80, ...
+            values = {
+                'C8': company.company_name,
+                'C9': group.curriculum_name,
+                # 継紙ヘッダー
+                'C63': company.company_name,
+                'C64': group.curriculum_name,
+            }
+            # A列「No.」を 40 スロット全てに連番で上書き (空欄行は B 以降が空のまま)
+            for slot in range(_PARTICIPANTS_PER_FORM):
+                r = 13 + slot * 2 if slot < 20 else 68 + (slot - 20) * 2
+                values[f'A{r}'] = offset + slot + 1
+            for idx, p in enumerate(chunk):
+                if idx < 20:
+                    r = 13 + idx * 2       # 本紙: 行13,15,...,51
+                else:
+                    r = 68 + (idx - 20) * 2  # 継紙: 行68,70,...,106
+                # B列 (B{r}:B{r+1} merged): 氏名
+                values[f'B{r}'] = p.name
+                parts = (p.insurance_number or "").replace('−', '-').replace('ー', '-').split('-')
+                if len(parts) == 3:
+                    values[f'C{r}'] = parts[0]
+                    values[f'F{r}'] = parts[1]
+                    values[f'I{r}'] = parts[2]
+            # この書式に含まれる人だけで雇用形態チェックボックスを設定
+            checkbox_states = get_3_1_employment_checkboxes(chunk)
 
-        # 雇用形態チェックボックス（正規雇用/有期契約）の状態を生成 (本紙+継紙 両対応)
-        checkbox_states = get_3_1_employment_checkboxes(group.participants)
-
-        fname = f"03_対象者一覧(3-1)_{company.company_name}_{group.curriculum_name}.xlsx"
-        return self._patch(
-            "計画申請/03_対象者一覧(様式第3-1号).xlsx",
-            fname, values,
-            checkbox_states=checkbox_states,
-        )
+            suffix = chunk_suffix(chunk_idx, len(chunks))
+            suffix_part = f"_{suffix}" if suffix else ""
+            fname = (f"03_対象者一覧(3-1){suffix_part}_"
+                     f"{company.company_name}_{group.curriculum_name}.xlsx")
+            path = self._patch(
+                "計画申請/03_対象者一覧(様式第3-1号).xlsx",
+                fname, values,
+                checkbox_states=checkbox_states,
+            )
+            output_paths.append(path)
+        return output_paths
 
     def write_対象者一覧_電子申請(self, company: CompanyInfo, group: CurriculumGroup) -> str:
         """03_対象者一覧(様式第3号)※電子申請のみ - 現行 R8.4 新規
@@ -422,50 +463,64 @@ class ExcelWriter:
         )
 
     def write_対象者一覧_3_2(self, company: CompanyInfo, group: CurriculumGroup,
-                              submit_date: datetime = None) -> str:
+                              submit_date: datetime = None) -> List[str]:
         """03_対象者一覧(様式第3-2号) 定額制用
 
         テンプレート列構造:
-          A: 番号（自動採番済み）, B: 氏名, C-F(merged): 正規雇用マーク, G-J(merged): 有期契約マーク
+          A: 番号(本来は事前採番), B: 氏名, C-F(merged): 正規雇用マーク, G-J(merged): 有期契約マーク
         ※ このフォームには保険番号欄は無い
+
+        41人を超える場合は書式を分割 (1書式=最大40名) し、ファイル名に ①②... を付与。
+        A列「No.」には全体の通し番号 (1, 2, ..., 41, 42, ...) を上書きする。
         """
         if submit_date is None:
             from datetime import datetime as _dt
             submit_date = _dt.now()
         rep = f"{company.representative_title}\u3000{company.representative_name}".strip()
         cert_text = f"{company.address}\n{rep}"
-        values = {
-            # 申請事業主の証明 - 日付
-            'E8': submit_date.year,
-            'G8': submit_date.month,
-            'I8': "",
-            # 申請事業主の証明 - 所在地（改行）代表者名
-            'E9': cert_text,
-            # 本紙ヘッダー
-            'C11': company.company_name,
-            'C12': group.curriculum_name,
-            # 継紙ヘッダー (項目21人目以降がある場合のみ意味があるが、常に書いても問題ない)
-            'C50': company.company_name,
-            'C51': group.curriculum_name,
-        }
-        # 受講者の配置:
-        #   本紙 (1〜20人目): 行16,17,...,35
-        #   継紙 (21〜40人目): 行55,56,...,74
-        for idx, p in enumerate(group.participants[:40]):
-            if idx < 20:
-                r = 16 + idx
-            else:
-                r = 55 + (idx - 20)
-            # A{r} は事前採番済みなのでスキップ。B{r} に氏名。
-            values[f'B{r}'] = p.name
-            # 雇用形態に応じてマーク列を選択（C=正規雇用、G=有期契約）
-            if '正規' in p.employment_type:
-                values[f'C{r}'] = '○'
-            elif '有期' in p.employment_type:
-                values[f'G{r}'] = '○'
 
-        fname = f"03_対象者一覧(3-2)_{company.company_name}_{group.curriculum_name}.xlsx"
-        return self._patch("計画申請/03_対象者一覧(様式第3-2号)_定額制.xlsx", fname, values)
+        chunks = chunk_participants(group.participants, _PARTICIPANTS_PER_FORM)
+        output_paths: List[str] = []
+        for chunk_idx, chunk in enumerate(chunks):
+            offset = chunk_idx * _PARTICIPANTS_PER_FORM
+            values = {
+                # 申請事業主の証明 - 日付
+                'E8': submit_date.year,
+                'G8': submit_date.month,
+                'I8': "",
+                # 申請事業主の証明 - 所在地（改行）代表者名
+                'E9': cert_text,
+                # 本紙ヘッダー
+                'C11': company.company_name,
+                'C12': group.curriculum_name,
+                # 継紙ヘッダー
+                'C50': company.company_name,
+                'C51': group.curriculum_name,
+            }
+            # A列「No.」を 40 スロット全てに連番で上書き
+            for slot in range(_PARTICIPANTS_PER_FORM):
+                r = (16 + slot) if slot < 20 else (55 + (slot - 20))
+                values[f'A{r}'] = offset + slot + 1
+            for idx, p in enumerate(chunk):
+                if idx < 20:
+                    r = 16 + idx       # 本紙: 行16〜35
+                else:
+                    r = 55 + (idx - 20)  # 継紙: 行55〜74
+                values[f'B{r}'] = p.name
+                if '正規' in p.employment_type:
+                    values[f'C{r}'] = '○'
+                elif '有期' in p.employment_type:
+                    values[f'G{r}'] = '○'
+
+            suffix = chunk_suffix(chunk_idx, len(chunks))
+            suffix_part = f"_{suffix}" if suffix else ""
+            fname = (f"03_対象者一覧(3-2){suffix_part}_"
+                     f"{company.company_name}_{group.curriculum_name}.xlsx")
+            path = self._patch(
+                "計画申請/03_対象者一覧(様式第3-2号)_定額制.xlsx", fname, values
+            )
+            output_paths.append(path)
+        return output_paths
 
     def write_事前確認書(self, company: CompanyInfo, sr: SocialInsuranceLabor,
                          group: CurriculumGroup, submit_date: datetime,
@@ -746,7 +801,12 @@ class ExcelWriter:
 
         for label, fn in jobs:
             try:
-                generated.append(fn())
+                result = fn()
+                # 戻り値が List[str] (40名超で分割書式) の場合は展開する
+                if isinstance(result, list):
+                    generated.extend(result)
+                else:
+                    generated.append(result)
             except Exception as e:
                 print(f"[{label}] 生成失敗: {e}")
                 import traceback
@@ -777,7 +837,12 @@ class ExcelWriter:
         ])
         for label, fn in jobs:
             try:
-                generated.append(fn())
+                result = fn()
+                # 戻り値が List[str] (40名超で分割書式) の場合は展開する
+                if isinstance(result, list):
+                    generated.extend(result)
+                else:
+                    generated.append(result)
             except Exception as e:
                 print(f"[{label}] 生成失敗: {e}")
                 import traceback

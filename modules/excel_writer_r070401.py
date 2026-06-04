@@ -25,6 +25,7 @@ from .excel_writer import (
     get_training_method_checkboxes,
     get_digital_training_checkboxes,
     get_4_2_teigaku_checkboxes,
+    chunk_participants, chunk_suffix, _PARTICIPANTS_PER_FORM,
 )
 
 
@@ -210,44 +211,52 @@ class ExcelWriterR070401(ExcelWriter):
         )
 
     def write_対象者一覧_3_2(self, company: CompanyInfo, group: CurriculumGroup,
-                              submit_date: datetime = None) -> str:
+                              submit_date: datetime = None) -> List[str]:
         """03_対象労働者一覧(様式第3-2号)定額制 - R070401版
 
         列構造: A=番号(自動), B=氏名, C-F(merged)=正規雇用マーク, G-J(merged)=有期契約マーク
+        41人を超える場合は書式を分割し、ファイル名に ①②... を付与。
         """
         if submit_date is None:
             from datetime import datetime as _dt
             submit_date = _dt.now()
         rep = f"{company.representative_title}　{company.representative_name}".strip()
         cert_text = f"{company.address}\n{rep}"
-        values = {
-            # 申請事業主の証明 - 日付
-            'E8': submit_date.year,
-            'G8': submit_date.month,
-            'I8': "",
-            # 申請事業主の証明 - 所在地（改行）代表者名
-            'E9': cert_text,
-            # 本紙ヘッダー
-            'C11': company.company_name,
-            'C12': group.curriculum_name,
-            # 継紙ヘッダー
-            'C50': company.company_name,
-            'C51': group.curriculum_name,
-        }
-        # 本紙 (1〜20人目): 行16〜35 / 継紙 (21〜40人目): 行55〜74
-        for idx, p in enumerate(group.participants[:40]):
-            r = (16 + idx) if idx < 20 else (55 + (idx - 20))
-            values[f'B{r}'] = p.name
-            if '正規' in p.employment_type:
-                values[f'C{r}'] = '○'
-            elif '有期' in p.employment_type:
-                values[f'G{r}'] = '○'
 
-        fname = f"03_対象労働者一覧(3-2)_{company.company_name}_{group.curriculum_name}.xlsx"
-        return self._patch(
-            "計画申請/03_人材開発支援助成金（事業展開等リスキリング支援コース）(様式第3-2号)※定額制.xlsx",
-            fname, values
-        )
+        chunks = chunk_participants(group.participants, _PARTICIPANTS_PER_FORM)
+        output_paths: List[str] = []
+        for chunk_idx, chunk in enumerate(chunks):
+            offset = chunk_idx * _PARTICIPANTS_PER_FORM
+            values = {
+                'E8': submit_date.year, 'G8': submit_date.month, 'I8': "",
+                'E9': cert_text,
+                'C11': company.company_name,
+                'C12': group.curriculum_name,
+                'C50': company.company_name,
+                'C51': group.curriculum_name,
+            }
+            # A列「No.」を 40 スロット全てに連番で上書き
+            for slot in range(_PARTICIPANTS_PER_FORM):
+                r = (16 + slot) if slot < 20 else (55 + (slot - 20))
+                values[f'A{r}'] = offset + slot + 1
+            for idx, p in enumerate(chunk):
+                r = (16 + idx) if idx < 20 else (55 + (idx - 20))
+                values[f'B{r}'] = p.name
+                if '正規' in p.employment_type:
+                    values[f'C{r}'] = '○'
+                elif '有期' in p.employment_type:
+                    values[f'G{r}'] = '○'
+
+            suffix = chunk_suffix(chunk_idx, len(chunks))
+            suffix_part = f"_{suffix}" if suffix else ""
+            fname = (f"03_対象労働者一覧(3-2){suffix_part}_"
+                     f"{company.company_name}_{group.curriculum_name}.xlsx")
+            path = self._patch(
+                "計画申請/03_人材開発支援助成金（事業展開等リスキリング支援コース）(様式第3-2号)※定額制.xlsx",
+                fname, values
+            )
+            output_paths.append(path)
+        return output_paths
 
     def write_様式14_1(self, company: CompanyInfo, group: CurriculumGroup,
                        submit_date: datetime) -> str:
@@ -556,7 +565,11 @@ class ExcelWriterR070401(ExcelWriter):
 
         for label, fn in jobs:
             try:
-                generated.append(fn())
+                result = fn()
+                if isinstance(result, list):
+                    generated.extend(result)
+                else:
+                    generated.append(result)
             except Exception as e:
                 print(f"[{label}] 生成失敗: {e}")
                 import traceback
@@ -593,7 +606,11 @@ class ExcelWriterR070401(ExcelWriter):
         ])
         for label, fn in jobs:
             try:
-                generated.append(fn())
+                result = fn()
+                if isinstance(result, list):
+                    generated.extend(result)
+                else:
+                    generated.append(result)
             except Exception as e:
                 print(f"[{label}] 生成失敗: {e}")
                 import traceback

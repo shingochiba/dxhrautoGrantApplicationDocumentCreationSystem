@@ -25,6 +25,19 @@ from modules.excel_writer import is_teigaku_course
 from modules.storage import load_saved_company, load_saved_sr, clear_saved, load_training_company_master
 from modules.auth import render_login_gate, get_current_user, logout
 from modules.bts import render_bts_panel
+from modules.version import get_latest_commit_info
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _cached_version_label() -> str:
+    """最新コミットのバージョン文字列を返す (5分キャッシュ)。
+    `ver0.9.8.6 (ccf7b73)` のような形式。取得失敗時は空文字。"""
+    subject, short_hash, _date = get_latest_commit_info()
+    if not subject:
+        return ""
+    if short_hash:
+        return f"{subject} ({short_hash})"
+    return subject
 
 # アプリの設定
 st.set_page_config(
@@ -623,6 +636,10 @@ def main():
         return
 
     st.title("人材開発支援助成金 書類自動作成ツール")
+    # 最新コミットのバージョン情報 (GitHub Actions / Streamlit Cloud デプロイ後に自動更新)
+    version_label = _cached_version_label()
+    if version_label:
+        st.caption(f"📌 最新バージョン: `{version_label}`")
     st.markdown("会社情報と受講者一覧を入力して、計画申請・支給申請の書類を自動生成します。")
     st.markdown("---")
 
