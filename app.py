@@ -22,7 +22,7 @@ from modules.upload_handler import (
 )
 from modules.document_generator import DocumentGenerator, FORMAT_CONFIGS, get_format_label
 from modules.excel_writer import is_teigaku_course
-from modules.storage import load_saved_company, load_saved_sr, clear_saved
+from modules.storage import load_saved_company, load_saved_sr, clear_saved, load_training_company_master
 from modules.auth import render_login_gate, get_current_user, logout
 from modules.bts import render_bts_panel
 
@@ -337,8 +337,12 @@ def render_step4():
 
     # 教育訓練機関 (研修実施会社) の選択
     st.subheader("教育訓練機関 (研修実施会社)")
-    from modules.storage import load_training_company_master
-    tc_master = load_training_company_master()
+    try:
+        tc_master = load_training_company_master()
+    except Exception as e:
+        st.error(f"研修実施会社マスタの読み込みに失敗しました: {type(e).__name__}: {e}")
+        tc_master = []
+        st.session_state['training_company'] = None
     if tc_master:
         tc_names = [tc.name for tc in tc_master]
         if '_training_company_idx' not in st.session_state:

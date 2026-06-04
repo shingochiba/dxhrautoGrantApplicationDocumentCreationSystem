@@ -10,7 +10,10 @@
       "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _find_training_inst.py 2>&1 | Select-Object -First 100)",
       "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _find_training_inst.py 2>&1 | Select-String \"教育訓練機関\" -Context 0,3)",
       "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python -c \"import ast; [ast.parse\\(open\\(p, encoding='utf-8'\\).read\\(\\)\\) for p in ['app.py','modules/company_form.py','modules/storage.py','modules/document_generator.py','modules/excel_writer.py','modules/excel_writer_r070401.py','modules/excel_writer_r80302.py']]; print\\('OK'\\)\")",
-      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _test_training_company.py)"
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _test_training_company.py)",
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python -c \"from modules.storage import load_training_company_master; print\\(load_training_company_master\\(\\)\\)\")",
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python -c \"import ast; ast.parse\\(open\\('app.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "PowerShell($bytes = [System.IO.File]::ReadAllBytes\\(\"config/training_company_master.json\"\\)[0..5]; $bytes | ForEach-Object { Write-Host -NoNewline \\('{0:X2} ' -f $_\\) }; Write-Host \"\")"
     ],
     "additionalDirectories": [
       "C:\\Users\\chiba\\OneDrive - アグリホールディングス株式会社\\デスクトップ\\document_generator_new\\.git"
