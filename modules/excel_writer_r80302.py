@@ -63,9 +63,10 @@ class ExcelWriterR80302(ExcelWriter):
                 location_value = first_p.location_name.strip()
         if not location_value:
             location_value = f"本社({company.address})"
-        # 教育訓練機関が GAID の場合、訓練の実施場所を GAID の所在地に上書き
+        # 教育訓練機関が GAID の場合、訓練の実施場所セルの 2段目に GAID 所在地を追加
+        # (1段目は現行の実施場所名のまま残す)
         if training_company is not None and 'GAID' in training_company.name:
-            location_value = training_company.address
+            location_value = f"{location_value}\n{training_company.address}"
 
         values = {
             # 提出日

@@ -18,7 +18,8 @@
       "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _test_chunking.py 2>&1)",
       "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python -c \"from modules.version import get_latest_commit_info; print\\(get_latest_commit_info\\(\\)\\)\")",
       "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python -c \"import ast; [ast.parse\\(open\\(p, encoding='utf-8'\\).read\\(\\)\\) for p in ['app.py','modules/version.py']]; print\\('OK'\\)\")",
-      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _test_location.py)"
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _test_location.py)",
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _test_location2.py)"
     ],
     "additionalDirectories": [
       "C:\\Users\\chiba\\OneDrive - アグリホールディングス株式会社\\デスクトップ\\document_generator_new\\.git"
