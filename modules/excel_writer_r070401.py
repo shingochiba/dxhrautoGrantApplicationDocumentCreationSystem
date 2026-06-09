@@ -81,10 +81,11 @@ class ExcelWriterR070401(ExcelWriter):
                 location_value = first_p.location_name.strip()
         if not location_value:
             location_value = f"本社({company.address})"
-        # 教育訓練機関が GAID の場合、訓練の実施場所セルの 2段目に GAID 所在地を追加
-        # (1段目は現行の実施場所名のまま残す)
+        # GAID 選択時: 下段「送信元」セル (R070401 は K47) を上書きする
+        # K46 (上段=受講場所) は現行のまま
+        gaid_sender_value = None
         if training_company is not None and 'GAID' in training_company.name:
-            location_value = f"{location_value}\n{training_company.address}"
+            gaid_sender_value = f"送信元：{training_company.address}"
 
         values = {
             # 提出日
@@ -121,6 +122,9 @@ class ExcelWriterR070401(ExcelWriter):
             # 男女別受講者数 (R070401 では行 73)
             'S73': male, 'AN73': female,
         }
+        # GAID 選択時のみ K47 (送信元セル) を上書き
+        if gaid_sender_value is not None:
+            values['K47'] = gaid_sender_value
         # 訓練期間 (R070401 では -1 行)
         if group.start_date:
             values['N42'] = group.start_date.year
