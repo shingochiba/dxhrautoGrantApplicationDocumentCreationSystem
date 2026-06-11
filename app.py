@@ -357,25 +357,33 @@ def render_step4():
         tc_master = []
         st.session_state['training_company'] = None
     if tc_master:
+        # 未選択を表す sentinel (-1) を先頭に置き、デフォルトを未選択にする
+        UNSELECTED = -1
         tc_names = [tc.name for tc in tc_master]
+        options = [UNSELECTED] + list(range(len(tc_names)))
         if '_training_company_idx' not in st.session_state:
-            st.session_state['_training_company_idx'] = 0
+            st.session_state['_training_company_idx'] = UNSELECTED
         tc_idx = st.selectbox(
-            "研修実施会社を選択",
-            options=list(range(len(tc_names))),
-            format_func=lambda i: tc_names[i],
+            "研修実施会社を選択 *",
+            options=options,
+            format_func=lambda i: "(未選択)" if i == UNSELECTED else tc_names[i],
             key="_training_company_idx",
-            help="様式1-1号（16欄）および 様式12号の教育訓練機関欄に反映されます",
+            help="様式1-1号（16欄）および 様式12号の教育訓練機関欄に反映されます。**必須**",
         )
-        selected_tc = tc_master[tc_idx]
-        with st.expander(f"📋 {selected_tc.name} の情報", expanded=False):
-            st.markdown(
-                f"- **法人名**: {selected_tc.name}\n"
-                f"- **所在地**: {selected_tc.address}\n"
-                f"- **代表者**: {selected_tc.representative_title} {selected_tc.representative_name}\n"
-                f"- **法人番号**: {selected_tc.corporate_number or '(未登録)'}"
-            )
-        st.session_state['training_company'] = selected_tc
+        if tc_idx == UNSELECTED:
+            st.warning("⚠️ 研修実施会社が未選択です。書類を生成する前に必ず選択してください。")
+            st.session_state['training_company'] = None
+            selected_tc = None
+        else:
+            selected_tc = tc_master[tc_idx]
+            with st.expander(f"📋 {selected_tc.name} の情報", expanded=False):
+                st.markdown(
+                    f"- **法人名**: {selected_tc.name}\n"
+                    f"- **所在地**: {selected_tc.address}\n"
+                    f"- **代表者**: {selected_tc.representative_title} {selected_tc.representative_name}\n"
+                    f"- **法人番号**: {selected_tc.corporate_number or '(未登録)'}"
+                )
+            st.session_state['training_company'] = selected_tc
     else:
         st.info("研修実施会社のマスタが未設定です。`config/training_company_master.json` を確認してください。")
         st.session_state['training_company'] = None
@@ -420,12 +428,22 @@ def render_step4():
     st.session_state['submit_date'] = datetime.combine(submit_date, datetime.min.time())
     st.session_state['format_id'] = format_id
 
-    if selected_curricula and (generate_plan or generate_payment):
+    # 研修実施会社マスタが存在する場合は選択を必須とする
+    training_company_required = bool(tc_master)
+    training_company_ok = (
+        not training_company_required
+        or st.session_state.get('training_company') is not None
+    )
+
+    if selected_curricula and (generate_plan or generate_payment) and training_company_ok:
         if st.button("📄 書類を生成する", type="primary", width='stretch'):
             st.session_state.current_step = 5
             st.rerun()
     else:
-        st.warning("生成する書類種類とカリキュラムを選択してください。")
+        if not selected_curricula or not (generate_plan or generate_payment):
+            st.warning("生成する書類種類とカリキュラムを選択してください。")
+        if not training_company_ok:
+            st.error("⛔ **研修実施会社が未選択です。** 上の「研修実施会社を選択」から選んでから「書類を生成する」を押してください。")
 
 
 def render_step5():
