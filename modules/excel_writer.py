@@ -272,6 +272,8 @@ class ExcelWriter:
                 location_value = first_p.location_name.strip()
         if not location_value:
             location_value = f"本社({company.address})"
+        # K47 (上段=受講場所) には「受信先：」プレフィックス (全角コロン) を付与
+        location_value = "受信先：" + location_value
         # 教育訓練機関が GAID の場合、訓練の実施場所の「送信元」セル (K48) を上書き
         # K47 (上段=受講場所) は現行のまま、K48 (下段=送信元) を「送信元：GAID住所」で置き換える
         gaid_sender_value = None

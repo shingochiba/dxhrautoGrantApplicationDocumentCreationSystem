@@ -21,7 +21,8 @@
       "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _test_location.py)",
       "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _test_location2.py)",
       "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _inspect_k47_k48.py)",
-      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _test_location3.py)"
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _test_location3.py)",
+      "PowerShell($env:PYTHONIOENCODING=\"utf-8\"; python _test_jushin.py)"
     ],
     "additionalDirectories": [
       "C:\\Users\\chiba\\OneDrive - アグリホールディングス株式会社\\デスクトップ\\document_generator_new\\.git"

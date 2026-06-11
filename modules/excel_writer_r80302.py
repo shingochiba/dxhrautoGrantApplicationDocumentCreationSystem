@@ -63,11 +63,12 @@ class ExcelWriterR80302(ExcelWriter):
                 location_value = first_p.location_name.strip()
         if not location_value:
             location_value = f"本社({company.address})"
+        # K47 (上段=受講場所) には「受信先：」プレフィックスを付与
+        location_value = "受信先：" + location_value
         # GAID 選択時: 下段「送信元」セル (K48) を上書きする
-        # K47 (上段=受講場所) は現行のまま
         gaid_sender_value = None
         if training_company is not None and 'GAID' in training_company.name:
-            gaid_sender_value = f"送信元：{training_company.address}"
+            gaid_sender_value = "送信元：" + training_company.address
 
         values = {
             # 提出日
