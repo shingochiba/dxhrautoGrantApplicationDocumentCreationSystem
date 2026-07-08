@@ -653,6 +653,28 @@ def main():
         render_bts_panel()
         return
 
+    # === サービス終了のお知らせ (目立つバナー) ===
+    st.markdown(
+        """
+        <div style="
+            background: linear-gradient(90deg, #ff4b4b, #ff8800);
+            color: white;
+            padding: 18px 24px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            font-size: 20px;
+            font-weight: bold;
+            text-align: center;
+            box-shadow: 0 4px 12px rgba(255, 75, 75, 0.4);
+            border: 2px solid #ffd700;
+        ">
+            🚨 <span style="font-size:24px;">重要なお知らせ</span> 🚨<br>
+            本システムは、<u style="font-size:26px;">令和8年7月31日</u>を以て終了します
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
     st.title("人材開発支援助成金 書類自動作成ツール")
     # 最新コミットのバージョン情報 (GitHub Actions / Streamlit Cloud デプロイ後に自動更新)
     version_label = _cached_version_label()
